@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>
+      Large Language Models for Software Testing: A Research Roadmap
+    </title>
+    <!-- Materialize CSS -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css"
+    />
+    <link href="styles.css" rel="stylesheet" />
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <!-- Materialize JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="container">
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 24px;
+          margin-bottom: 8px;
+        "
+      >
+        <img src="img/giis.png" alt="Group 1 Logo" class="header-logo" />
+        <div style="flex: 1; margin: 0 24px">
+          <h4
+            class="center-align main-title teal-text text-darken-3"
+            style="font-size: 1.7rem; margin-bottom: 8px"
+          >
+            Large Language Models for Software Testing: A Research Roadmap
+          </h4>
+          <div style="text-align: center; font-size: 1.05rem; color: #333">
+            <span>
+              <b>Antonia Bertolino</b><sup>1</sup>, <b>Cristian Augusto</b
+              ><sup>2</sup>, <b>Guglielmo De Angelis</b><sup>3</sup>,
+              <b>Francesca Lonetti</b><sup>4</sup>, <b>Jesús Morán</b
+              ><sup>2</sup>
+            </span>
+            <div style="margin-top: 2px">
+              <span><sup>1</sup>GSSI, Italy</span> &nbsp;
+              <span><sup>2</sup>University of Oviedo, Spain</span> &nbsp;
+              <span><sup>3</sup>IASI-CNR, Italy</span> &nbsp;
+              <span><sup>4</sup>ISTI-CNR, Italy</span>
+            </div>
+            <!-- Download system for data in multiple formats -->
+            <div style="margin-top: 10px">
+              <span style="font-size: 0.98rem; color: #444; margin-right: 8px"
+                >DOWNLOAD DATASET:</span
+              >
+              <a
+                id="download-csv"
+                class="btn-small teal lighten-2 white-text"
+                style="margin-right: 4px"
+                download="Papers.csv"
+                >CSV</a
+              >
+              <a
+                id="download-json"
+                class="btn-small teal lighten-2 white-text"
+                style="margin-right: 4px"
+                download="Papers.json"
+                >JSON</a
+              >
+              <a
+                id="download-xlsx"
+                class="btn-small teal lighten-2 white-text"
+                style="margin-right: 4px"
+                download="Papers.xlsx"
+                >Excel</a
+              >
+            </div>
+            <!-- Citation button row -->
+            <div
+              style="
+                margin-top: 10px;
+                display: flex;
+                justify-content: center;
+                gap: 8px;
+              "
+            >
+              <span style="font-size: 0.98rem; color: #444; margin-right: 8px"
+                >CITE US:</span
+              >
+              <button
+                id="show-citation"
+                class="btn-small teal lighten-2 white-text"
+                type="button"
+              >
+                Show citation
+              </button>
+              <a
+                id="download-bibtex"
+                class="btn-small teal lighten-2 white-text"
+                download="Bertolino2025.bib"
+                style="display: inline-block"
+              >
+                Download citation
+              </a>
+            </div>
+          </div>
+        </div>
+        <img src="img/secd.png" alt="Group 2 Logo" class="header-logo" />
+      </div>
+      <div class="row">
+        <div class="col s12 m12 l8">
+          <div class="card">
+            <div class="card-content">
+              <span class="card-title">Paper List</span>
+              <!-- Article count selector -->
+              <div class="input-field" style="max-width: 200px">
+                <select id="pageLengthSelect">
+                  <option value="5" selected>5 papers</option>
+                  <option value="10">10 papers</option>
+                  <option value="25">25 papers</option>
+                  <option value="50">50 papers</option>
+                  <option value="100">100 papers</option>
+                  <option value="-1">All</option>
+                </select>
+                <label for="pageLengthSelect">Show</label>
+              </div>
+              <table
+                id="tabla"
+                class="striped highlight responsive-table"
+              ></table>
+            </div>
+          </div>
+        </div>
+        <div class="col s12 m12 l4">
+          <div class="card">
+            <div class="card-content">
+              <span class="card-title">Graph</span>
+              <div class="input-field">
+                <select id="graficoSelect">
+                  <option value="ano" selected>📅 Papers-Year</option>
+                  <option value="llmsused">🤖 LLMs Used</option>
+                  <option value="benchmarks">⏱️ Benchmarks Used</option>
+                  <option value="metrics">📐 Metrics Used</option>
+                  <option value="category">🗄️ Classification</option>
+                  <option value="conferences">🎤 Conferences</option>
+                  <option value="journals">📚 Journals</option>
+                </select>
+                <label for="graficoSelect">Select the type of Graph</label>
+              </div>
+              <div class="graph-wrapper">
+                <canvas id="grafica"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for abstract -->
+    <div id="modal-abstract" class="modal">
+      <div class="modal-content">
+        <h5 id="modal-abstract-title"></h5>
+        <p id="modal-abstract-content"></p>
+      </div>
+      <div class="modal-footer">
+        <a href="#!" class="modal-close waves-effect waves-green btn-flat"
+          >Close</a
+        >
+      </div>
+    </div>
+
+    <!-- Citation Modal -->
+    <div id="modal-citation" class="modal">
+      <div class="modal-content">
+        <h5>Citation</h5>
+        <pre
+          id="citation-content"
+          style="white-space: pre-wrap; font-size: 1rem"
+        ></pre>
+      </div>
+      <div class="modal-footer">
+        <a href="#!" class="modal-close waves-effect waves-green btn-flat"
+          >Close</a
+        >
+        <a href="#" id="copy-citation" class="waves-effect waves-teal btn-flat"
+          >Copy</a
+        >
+      </div>
+    </div>
+  </body>
+</html>
