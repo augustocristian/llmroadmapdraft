@@ -22,7 +22,9 @@
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <!-- Materialize JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     <script src="app.js" defer></script>
+
   </head>
   <body>
     <div class="container">
@@ -35,7 +37,6 @@
           margin-bottom: 8px;
         "
       >
-        <img src="img/giis.png" alt="Group 1 Logo" class="header-logo" />
         <div style="flex: 1; margin: 0 24px">
           <h4
             class="center-align main-title teal-text text-darken-3"
@@ -113,7 +114,6 @@
             </div>
           </div>
         </div>
-        <img src="img/secd.png" alt="SECD Logo" class="header-logo" />
       </div>
 <div
   style="
@@ -130,16 +130,16 @@
         <div class="col s12 m12 l8">
           <div class="card">
             <div class="card-content">
-              <span class="card-title">Paper List</span>
+              <span class="card-title"><b>Article List</b></span>
               <!-- Article count selector -->
               <div class="input-field" style="max-width: 200px">
                 <select id="pageLengthSelect">
-                  <option value="5" selected>5 papers</option>
-                  <option value="10">10 papers</option>
-                  <option value="25">25 papers</option>
-                  <option value="50">50 papers</option>
-                  <option value="100">100 papers</option>
-                  <option value="-1">All</option>
+                  <option value="5" selected>5 articles</option>
+                  <option value="10">10 articles</option>
+                  <option value="25">25 articles</option>
+                  <option value="50">50 articles</option>
+                  <option value="100">100 articles</option>
+                  <option value="-1">All articles</option>
                 </select>
                 <label for="pageLengthSelect">Show</label>
               </div>
@@ -153,7 +153,7 @@
         <div class="col s12 m12 l4">
           <div class="card">
             <div class="card-content">
-              <span class="card-title">Graph</span>
+              <span class="card-title"><b>Data Insights</b></span>
               <div class="input-field">
                 <select id="graficoSelect">
                   <option value="ano" selected>📅 Papers-Year</option>

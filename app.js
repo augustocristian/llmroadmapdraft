@@ -73,16 +73,28 @@ function renderChartStacked(years, categories, dataByYearCategory) {
         chartInstance.destroy();
     }
 
+    // Fixed pastel colors by category
+    const colorMap = {
+        Journal: "hsl(120, 70%, 80%)", // pastel green
+        arXiv: "hsl(0, 70%, 80%)", // pastel red
+        Conference: "hsl(220, 70%, 80%)", // pastel blue
+    };
+
+    const fixedOrder = [
+        "Journal",
+        "Conference",
+        "arXiv"
+    ];
+
     // Pastel color palette for categories
     const colors = categories.map((_, i) => {
         const hue = ((i * 360) / categories.length) % 360;
         return `hsl(${hue}, 70%, 65%)`;
     });
-
     // One dataset per category
-    const datasets = categories.map((cat, i) => ({
+    const datasets = fixedOrder.map((cat) => ({
         label: cat,
-        backgroundColor: colors[i],
+        backgroundColor: colorMap[cat] || "hsl(0, 0%, 80%)", // fallback light gray
         data: years.map((year) => dataByYearCategory[year]?.[cat] || 0),
     }));
 
@@ -230,6 +242,23 @@ function renderClassificationLLMTypeChart(
     classificationLLMType,
     llmApproachTypes
 ) {
+        // Custom color map
+    const colorMap = {
+        "LLM-Pure-Prompting": "hsl(200, 70%, 80%)",    // light blue
+        "Hybrid-Prompting": "hsl(200, 70%, 40%)",      // dark blue
+        "LLM-Pure-FineTune": "hsl(0, 70%, 80%)",      // light red
+        "Hybrid-FineTune": "hsl(0, 70%, 40%)",        // dark red
+        "None": "hsl(0, 0%, 80%)"             // grey
+    };
+    // Enforce fixed stacking order
+    const fixedOrder = [
+        "LLM-Pure-Prompting",
+        "Hybrid-Prompting",
+        "LLM-Pure-FineTune",
+        "Hybrid-FineTune",
+        "None"
+    ];
+
     const ctx = document.getElementById("grafica");
     if (chartInstance) chartInstance.destroy();
 
@@ -245,12 +274,10 @@ function renderClassificationLLMTypeChart(
         .sort((a, b) => b.total - a.total)
         .map((cl) => cl.name);
 
-    const datasets = llmApproachTypes.map((type, i) => ({
+    const datasets = fixedOrder.map((type) => ({
         label: type,
         data: classifications.map((cl) => classificationLLMType[cl][type] || 0),
-        backgroundColor: `hsl(${
-            ((i * 360) / llmApproachTypes.length) % 360
-        }, 70%, 65%)`,
+        backgroundColor: colorMap[type] || "hsl(0, 0%, 90%)", // fallback light gray
     }));
 
     chartInstance = new Chart(ctx, {
@@ -411,6 +438,17 @@ Papa.parse("data/Papers.csv", {
                 {
                     targets: headers.indexOf("TITLE"),
                     width: "30%",
+                    render: function (data, type, row) {
+                        let bibtex = row[headers.indexOf("BIBTEX")] || "";
+                        let urlMatch = bibtex.match(
+                            /url\s*=\s*[{"]([^}"]+)[}"]/i
+                        );
+                        let url = urlMatch ? urlMatch[1] : null;
+                        if (url) {
+                            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${data}</a>`;
+                        }
+                        return data; // fallback if no URL in bibtex
+                    },
                 },
                 {
                     targets: headers.indexOf("BIBTEX"),
@@ -625,23 +663,35 @@ function showAbstractFromAttr(el) {
 }
 
 // Citation info (keep in sync with your CITATION.cff)
-const citationData = {
-    authors: [
-        { given: "Antonia", family: "Bertolino" },
-        { given: "Cristian", family: "Augusto" },
-        { given: "Guglielmo", family: "De Angelis" },
-        { given: "Francesca", family: "Lonetti" },
-        { given: "Jesús", family: "Morán" },
-    ],
-    title: "Large Language Models for Software Testing: A Research Roadmap",
-    journal: "Journal of Software Testing and Systems",
-    year: "2025",
-    volume: "42",
-    issue: "3",
-    pages: "239-255",
-    publisher: "Springer",
-    doi: "10.1007/978-3-031-80889-0_17",
-};
+let citationData = null;
+
+// Load and parse CITATION.cff
+fetch("CITATION.cff")
+    .then((response) => response.text())
+    .then((cffText) => {
+        const cff = jsyaml.load(cffText);
+        const pc = cff["preferred-citation"];
+
+        citationData = {
+            authors: pc.authors.map((a) => ({
+                given: a["given-names"],
+                family: a["family-names"],
+                orcid: a.orcid || null,
+            })),
+            title: pc.title,
+            journal: pc.journal?.name || "",
+            year: pc.year,
+            volume: pc.journal?.volume || "",
+            issue: pc.journal?.issue || "",
+            pages: pc.journal?.pages
+                ? `${pc.journal.pages.start}-${pc.journal.pages.end}`
+                : "",
+            publisher: pc.journal?.publisher || "",
+            doi: pc.doi || "",
+            url: cff.url || "",
+        };
+    })
+    .catch((err) => console.error("Error loading CITATION.cff:", err));
 
 function formatBibTeX(data) {
     // BibTeX author format: "Last, First and Last, First and ..."
