@@ -18,7 +18,7 @@ paper itself.
 
 ## Citing this work
 
-- Antonia Bertolino, Cristian Augusto, Guglielmo di Angelis and Francesca Lonetti “Large Language Models  for Software Testing: A Research Roadmap” in TO-DO   [https://doi.org/XXXXX](TO-DO) - [Full Paper available](TO-DO) - [Authors version](TO-DO) -
+- Cristian Augusto, Antonia Bertolino, Guglielmo de Angelis, Francesca Lonetti and Jesús Morán, “Large Language Models  for Software Testing: A Research Roadmap” in TO-DO   [https://doi.org/XXXXX](TO-DO) - [Full Paper available](TO-DO) - [Authors version](TO-DO) -
   [Download citation](TO-DO)
 
 ## Acknowledgments
@@ -28,20 +28,5 @@ UE,
 by the [Ministry of Science and Innovation (SPAIN)](https://www.ciencia.gob.es/) and in part by the project MASE
 RDS-PTR_22_24_P2.1 Cybersecurity (Italy). 
 
-
-
-
-# README TEMPORAL:
-
-Mi idea es desplegarlo en GitHub Pages, para ejecutarlo en local puedes hacer
-
-
-```bash
-
-git clone https://github.com/augustocristian/llmroadmapdata.git
-cd llmroadmapdata
-python -m http.server
-
-```
 
 Tendrías accesible todo en la siguiente [URL](http://localhost:8000/index.html#!)
