@@ -1,12 +1,12 @@
 cff-version: 1.2.0
 message: "If you cite this replication package, please cite it as below."
 authors:
-  - family-names: "Bertolino"
-    given-names: "Antonia"
-    orcid: "https://orcid.org/0000-0001-8749-1356"
   - family-names: "Augusto"
     given-names: "Cristian"
     orcid: "https://orcid.org/0000-0001-6140-1375"
+  - family-names: "Bertolino"
+    given-names: "Antonia"
+    orcid: "https://orcid.org/0000-0001-8749-1356"
   - family-names: "De Angelis"
     given-names: "Guglielmo"
     orcid: "https://orcid.org/0000-0002-1076-0076"
@@ -24,12 +24,12 @@ url: "https://github.com/giis-uniovi/retorch-llmexpstudy-rp"
 preferred-citation:
   type: article
   authors:
-    - family-names: "Bertolino"
-      given-names: "Antonia"
-      orcid: "https://orcid.org/0000-0001-8749-1356"
     - family-names: "Augusto"
       given-names: "Cristian"
       orcid: "https://orcid.org/0000-0001-6140-1375"
+    - family-names: "Bertolino"
+      given-names: "Antonia"
+      orcid: "https://orcid.org/0000-0001-8749-1356"
     - family-names: "De Angelis"
       given-names: "Guglielmo"
       orcid: "https://orcid.org/0000-0002-1076-0076"
