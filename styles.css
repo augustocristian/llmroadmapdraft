@@ -108,3 +108,72 @@ canvas {
     max-width: 160px;
     padding: 0 24px;
 }
+
+.download-btn{
+    display: inline-block;
+    padding: 6px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #ffffff;
+    background: #26a69a;           /* teal */
+    background-image: none;
+    border-radius: 6px;
+    text-decoration: none;
+    margin-right: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    transition: transform .08s ease, box-shadow .12s ease;
+    vertical-align: middle;
+}
+
+.download-btn:hover{
+    background: #009688;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.10);
+}
+
+.download-btn:active{
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.download-btn:focus{
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(38,166,154,0.18);
+}
+
+.title-label {
+  font-size: 0.98rem;     /* same as your inline */
+  color: #5e5b5b;            /* dark gray */
+  margin-right: 8px;      /* spacing */
+  font-weight: 600;       /* makes <b> unnecessary */
+  letter-spacing: 0.5px;  /* optional: nicer readability */
+  display: inline-block;  /* makes margin work consistently */
+  vertical-align: middle; /* aligns with buttons/links */
+}
+
+.acks-section {
+    text-align: center;     /* same as center-align */
+    padding: 0.2rem 1rem;     /* similar to Materialize's .section */
+    color: #686666;         /* grey darken-1 */
+    font-size: 1rem;        /* adjust if needed */
+    line-height: 1.6;
+}
+
+.authors {
+    text-align: center;       /* centers names */
+    margin: 1rem auto;        /* space around the block */
+    font-size: 1.1rem;        /* slightly larger than body text */
+    font-weight: 500;         /* medium emphasis */
+    color: #333;              /* dark grey for readability */
+    line-height: 1.8;
+}
+
+.authors span {
+    display: inline-block;    /* makes spacing easier */
+    margin: 0 0.5rem;         /* gap between author names */
+}
+
+.authors .highlight {
+    font-weight: 700;         /* bold certain authors */
+    color: #0073e6;           /* accent color (blue, adjust as needed) */
+}
