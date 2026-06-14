@@ -1,7 +1,17 @@
-let dataTableInstance = null;
-let dataTableHeaders = null;
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  ARTICLE TABLE — Tabulator-based (zero-dependency, no jQuery).        ║
+// ║  Rows are the raw PapaParse record objects; every filter (corpus,     ║
+// ║  year, per-column sets, abstract search, reading list, global search) ║
+// ║  is one combined predicate: _rowPasses, applied via setFilter().       ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
+let tabulator = null;            // Tabulator instance
+let _tableBuilt = false;
 let currentCorpus = "all";
 let currentYearRange = null;
+let _globalQuery = [];           // AND-ed search terms, set by chart clicks (chartClickFilter)
+let _abstractQuery = "";         // abstract search box
+let _rlFilterActive = false;     // reading-list-only toggle
 
 const MULTI_VALUE_COLS = new Set([
     "TREND", "LLM ITERACTION", "CONTEXTUAL INFO", "APPROACH", "SCOPE",
@@ -10,92 +20,74 @@ const MULTI_VALUE_COLS = new Set([
 
 const NO_FILTER_COLS = new Set(["TITLE", "ABSTRACT", "BIBTEX"]);
 
-const CHIP_COLORS = {
-    "TREND":                null,
-    "LLM ITERACTION":       null,
-    "CONTEXTUAL INFO":      null,
-    "APPROACH":             null,
-    "SCOPE":                null,
-    "FOCUS":                null,
-    "BENCHMARK":            { bg: "#eceff1", fg: "#37474f" },
-    "LLMs USED":            { bg: "#e0f7fa", fg: "#00695c" },
-    "EVALUATION METRIC":    { bg: "#f3e5f5", fg: "#6a1b9a" },
-    "TOOL":                 { bg: "#efebe9", fg: "#4e342e" },
-    "TYPE OF CONTRIBUTION": null,
-    "PUBLICATION TYPE":     null,
-    "YEAR":                 null,
-    "PUBLISHED INTO":       null,
-};
+const HIDDEN_COLS = new Set(["KEY", "DATABASE"]);
 
-function showAbstract(title, authors, venue, abstract, url, trends, conf, year) {
+// ── Reading list (localStorage) ────────────────────────────────────────
+const readingList = new Set(JSON.parse(localStorage.getItem("readingList") || "[]"));
+globalThis._readingList = readingList;
+
+function _saveReadingList() {
+    localStorage.setItem("readingList", JSON.stringify([...readingList]));
+    const badge = document.getElementById("readingListCount");
+    if (badge) {
+        badge.textContent = readingList.size;
+        badge.style.display = readingList.size > 0 ? "" : "none";
+    }
+}
+
+// ── Abstract / BibTeX modals ───────────────────────────────────────────
+function _populateRelatedPapers(title, trends, relatedDiv, relatedList) {
+    relatedList.innerHTML = "";
+    const allData = globalThis._allData;
+    if (!allData || !trends) { relatedDiv.style.display = "none"; return; }
+    const paperTrends = trends.split(",").map((s) => s.trim()).filter(Boolean);
+    if (paperTrends.length === 0) { relatedDiv.style.display = "none"; return; }
+    const related = allData.filter((r) => {
+        if ((r.TITLE || "").trim() === title.trim()) return false;
+        const rTrends = new Set((r.TREND || "").split(",").map((s) => s.trim()));
+        return paperTrends.some((t) => rTrends.has(t));
+    }).slice(0, 8);
+    if (related.length === 0) { relatedDiv.style.display = "none"; return; }
+    related.forEach((r) => {
+        const li = document.createElement("li");
+        const bibtex = r.BIBTEX || "";
+        const paperUrl = (bibtex.match(/url\s*=\s*[{"]([^}"]+)[}"]/i) || [])[1] || "";
+        const rTitle = r.TITLE || "";
+        const sharedTrends = (r.TREND || "").split(",").map((s) => s.trim()).filter((t) => paperTrends.includes(t));
+        if (paperUrl) {
+            li.innerHTML = `<a href="${paperUrl}" target="_blank" style="color:#00796b;">${rTitle}</a>`;
+        } else {
+            li.textContent = rTitle;
+        }
+        sharedTrends.forEach((t) => {
+            const chip = document.createElement("span");
+            chip.className = "related-chip";
+            chip.textContent = t;
+            li.appendChild(chip);
+        });
+        relatedList.appendChild(li);
+    });
+    relatedDiv.style.display = "";
+}
+
+function showAbstract({ title, authors, venue, abstract, url, trends, conf, year }) {
     document.getElementById("modal-abstract-title").textContent = title;
     document.getElementById("modal-abstract-authors").textContent = authors;
     const venueEl = document.getElementById("modal-abstract-venue");
-    const confUrl = (typeof _confUrls === "object" && _confUrls && conf && year) ? _confUrls[conf + " " + year] : null;
+    const confUrl = (typeof _confUrls === "object" && _confUrls && conf && year)
+        ? (_confUrls[conf + " " + year] || null) : null;
     if (confUrl) {
-        venueEl.innerHTML = `<a href="${confUrl}" target="_blank" rel="noopener" style="color:#00796b;text-decoration:underline;">${venue}</a>`;
+        venueEl.innerHTML = `<a href="${confUrl}" target="_blank" rel="noopener" style="color:#00796b;font-weight:600;text-decoration:underline;">${venue}</a>`;
     } else {
         venueEl.textContent = venue;
     }
     document.getElementById("modal-abstract-content").textContent = abstract;
     const linkBtn = document.getElementById("modal-abstract-link");
-    if (url) {
-        linkBtn.href = url;
-        linkBtn.style.display = "";
-    } else {
-        linkBtn.style.display = "none";
-    }
-    // Related papers
-    const relatedDiv = document.getElementById("modal-related-papers");
-    const relatedList = document.getElementById("modal-related-list");
-    relatedList.innerHTML = "";
-    if (window._allData && trends) {
-        const paperTrends = trends.split(",").map((s) => s.trim()).filter(Boolean);
-        if (paperTrends.length > 0) {
-            const related = window._allData
-                .filter((r) => {
-                    if ((r.TITLE || "").trim() === title.trim()) return false;
-                    const rTrends = (r.TREND || "").split(",").map((s) => s.trim());
-                    return paperTrends.some((t) => rTrends.includes(t));
-                })
-                .slice(0, 8);
-            if (related.length > 0) {
-                related.forEach((r) => {
-                    const li = document.createElement("li");
-                    const bibtex = r.BIBTEX || "";
-                    const paperUrl = (bibtex.match(/url\s*=\s*[{"]([^}"]+)[}"]/i) || [])[1] || "";
-                    const rTitle = r.TITLE || "";
-                    const sharedTrends = (r.TREND || "").split(",").map((s) => s.trim())
-                        .filter((t) => paperTrends.includes(t));
-                    if (paperUrl) {
-                        li.innerHTML = `<a href="${paperUrl}" target="_blank" style="color:#00796b;">${rTitle}</a>`;
-                    } else {
-                        li.textContent = rTitle;
-                    }
-                    sharedTrends.forEach((t) => {
-                        const chip = document.createElement("span");
-                        chip.className = "related-chip";
-                        chip.textContent = t;
-                        li.appendChild(chip);
-                    });
-                    relatedList.appendChild(li);
-                });
-                relatedDiv.style.display = "";
-            } else {
-                relatedDiv.style.display = "none";
-            }
-        } else {
-            relatedDiv.style.display = "none";
-        }
-    } else {
-        relatedDiv.style.display = "none";
-    }
-    M.Modal.getInstance(document.getElementById("modal-abstract")).open();
-}
-
-function showAbstractFromAttr(el) {
-    const attr = (name) => decodeURIComponent(el.getAttribute("data-" + name) || "");
-    showAbstract(attr("title"), attr("authors"), attr("venue"), attr("abstract"), attr("url"), attr("trends"), attr("conf"), attr("year"));
+    if (url) { linkBtn.href = url; linkBtn.style.display = ""; } else { linkBtn.style.display = "none"; }
+    _populateRelatedPapers(title, trends,
+        document.getElementById("modal-related-papers"),
+        document.getElementById("modal-related-list"));
+    openDialog("modal-abstract");
 }
 
 let _lastBibtexBlobUrl = null;
@@ -105,503 +97,464 @@ function showBibtex(bibtex) {
     if (_lastBibtexBlobUrl) URL.revokeObjectURL(_lastBibtexBlobUrl);
     _lastBibtexBlobUrl = URL.createObjectURL(new Blob([bibtex], { type: "text/plain" }));
     dlBtn.href = _lastBibtexBlobUrl;
-    M.Modal.getInstance(document.getElementById("modal-bibtex")).open();
+    openDialog("modal-bibtex");
 }
 
-function showBibtexFromAttr(el) {
-    showBibtex(decodeURIComponent(el.getAttribute("data-bibtex") || ""));
+// Build the showAbstract() payload straight from a row object.
+function _abstractArgs(row) {
+    const bibtex = row.BIBTEX || "";
+    const authMatch = bibtex.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
+    const authors = authMatch ? authMatch[1].replace(/\s+/g, " ").trim() : "";
+    const pubRaw = (row["PUBLISHED INTO"] || "").trim();
+    const acronym = pubRaw.replace(/^[CJ]:\s*/, "");
+    const pubType = (row["PUBLICATION TYPE"] || "").trim();
+    let venue = acronym;
+    if (pubType === "arXiv") {
+        venue = "arXiv";
+    } else {
+        const btMatch = bibtex.match(/booktitle\s*=\s*[{"]([^}"]+)[}"]/i);
+        const jnMatch = bibtex.match(/journal\s*=\s*[{"]([^}"]+)[}"]/i);
+        let longName = "";
+        if (btMatch) longName = btMatch[1].trim();
+        else if (jnMatch) longName = jnMatch[1].trim();
+        if (longName) venue = longName + " (" + acronym + ")";
+    }
+    const paperUrl = (bibtex.match(/url\s*=\s*[{"]([^}"]+)[}"]/i) || [])[1]?.trim() || "";
+    return {
+        title: row.TITLE || "", authors, venue, conf: acronym,
+        year: row.YEAR || "", url: paperUrl,
+        trends: row.TREND || "", abstract: row.ABSTRACT || "",
+    };
 }
 
-const PUB_TYPE_COLORS = {
-    "Journal":    { bg: "#bbdefb", fg: "#0d47a1" },
-    "Conference": { bg: "#c8e6c9", fg: "#1b5e20" },
-    "arXiv":      { bg: "#ffcdd2", fg: "#b71c1c" },
+// ── Chip colour maps — derived from the unified _PALETTE ──────────────
+// charts.js (loaded first) defines _PALETTE, _chipColor, _lightenHex.
+const _P = globalThis._PALETTE || {};
+
+// Map every value of a _PALETTE dimension to its derived chip { bg, fg } pair.
+function _paletteChipColors(paletteKey) {
+    return Object.fromEntries(
+        Object.entries(_P[paletteKey] || {}).map(([k, v]) => [k, _chipColor(v)])
+    );
+}
+
+const PUB_TYPE_COLORS = _paletteChipColors("pubTypes");
+const TREND_COLORS = _paletteChipColors("trends");
+const INTERACTION_COLORS = _paletteChipColors("prompting");
+const CONTEXT_COLORS = _paletteChipColors("contextualInfo");
+const APPROACH_COLORS = _paletteChipColors("approach");
+const SCOPE_COLORS = _paletteChipColors("scope");
+const CONTRIBUTION_COLORS = _paletteChipColors("contributions");
+const FOCUS_COLORS = _paletteChipColors("dimensionFocus");
+const LLM_COLORS = _paletteChipColors("llmFamilies");
+const YEAR_COLORS = (() => {
+    const seq = _P.sequence || [];
+    return Object.fromEntries(
+        ["2020", "2021", "2022", "2023", "2024", "2025", "2026"].map((y, i) => [y, _chipColor(seq[i] || _C.GRAY)])
+    );
+})();
+
+// Free-text list columns: one flat chip colour per column, anchored to the
+// same _C constant the column's chart uses (bench_trend → PURPLE, etc.).
+const CHIP_COLORS = {
+    "BENCHMARK":         _chipColor(_C.PURPLE),
+    "EVALUATION METRIC": _chipColor(_C.DEEP_RED),
+    "TOOL":              _chipColor(_C.GRAY),
 };
-const INTERACTION_COLORS = {
-    "Pure Prompting":   { bg: "#e3f2fd", fg: "#1565c0" },
-    "Hybrid Prompting": { bg: "#1565c0", fg: "#fff" },
-};
-const CONTEXT_COLORS = {
-    "None":               { bg: "#eceff1", fg: "#546e7a" },
-    "RAG":                { bg: "#fff3e0", fg: "#e65100" },
-    "Fine-Tuning":        { bg: "#fce4ec", fg: "#ad1457" },
-};
-const APPROACH_COLORS = {
-    "Tool/Framework": { bg: "#ede7f6", fg: "#4527a0" },
-    "Agent":         { bg: "#4527a0", fg: "#fff" },
-};
-const SCOPE_COLORS = {
-    "Functional":     { bg: "#e0f7fa", fg: "#006064" },
-    "Non-Functional": { bg: "#fff8e1", fg: "#f57f17" },
-};
-const CONTRIBUTION_COLORS = {
-    "Survey":         { bg: "#e3f2fd", fg: "#0d47a1" },
-    "New Method/Tool":{ bg: "#e8f5e9", fg: "#1b5e20" },
-    "Evaluation":     { bg: "#fff3e0", fg: "#e65100" },
-};
-const FOCUS_COLORS = {
-    "Code/Procedure": { bg: "#e8eaf6", fg: "#283593" },
-    "Data":            { bg: "#fff9c4", fg: "#f57f17" },
-    "Optimization":    { bg: "#e8f5e9", fg: "#2e7d32" },
-};
-const TREND_COLORS = {
-    "Unit Test Generation":             { bg: "#e3f2fd", fg: "#0d47a1" },
-    "High-Level Test Gen":              { bg: "#e8f5e9", fg: "#1b5e20" },
-    "Oracle Derivation":                { bg: "#fff3e0", fg: "#e65100" },
-    "Reflections":                      { bg: "#fce4ec", fg: "#ad1457" },
-    "Test Augmentation or Improvement": { bg: "#ede7f6", fg: "#4527a0" },
-    "Test Configuration or Execution":  { bg: "#e0f7fa", fg: "#006064" },
-};
-const YEAR_COLORS = {
-    "2020": { bg: "#fce4ec", fg: "#ad1457" },
-    "2021": { bg: "#fff3e0", fg: "#e65100" },
-    "2022": { bg: "#fff9c4", fg: "#f57f17" },
-    "2023": { bg: "#e8f5e9", fg: "#1b5e20" },
-    "2024": { bg: "#e3f2fd", fg: "#0d47a1" },
-    "2025": { bg: "#ede7f6", fg: "#4527a0" },
-    "2026": { bg: "#e0f7fa", fg: "#006064" },
-};
-const VENUE_COLORS = {
-    // ── Core SE conferences ──
-    "ICSE":              { bg: "#e3f2fd", fg: "#0d47a1" },
-    "FSE":               { bg: "#e8f5e9", fg: "#1b5e20" },
-    "ISSTA":             { bg: "#fff3e0", fg: "#e65100" },
-    "ASE":               { bg: "#fce4ec", fg: "#ad1457" },
-    "ICST":              { bg: "#ede7f6", fg: "#4527a0" },
-    "AST":               { bg: "#e0f7fa", fg: "#006064" },
-    "ISSRE":             { bg: "#fff9c4", fg: "#f57f17" },
-    "SANER":             { bg: "#f3e5f5", fg: "#6a1b9a" },
-    "SIGSOFT":           { bg: "#e8eaf6", fg: "#283593" },
-    "EASE":              { bg: "#efebe9", fg: "#4e342e" },
-    "ICTSS":             { bg: "#e0f2f1", fg: "#004d40" },
-    "ICCMT":             { bg: "#fbe9e7", fg: "#bf360c" },
-    "ICDDS":             { bg: "#f1f8e9", fg: "#33691e" },
-    "A-TEST":            { bg: "#e1f5fe", fg: "#01579b" },
-    "AITEST":            { bg: "#fff8e1", fg: "#ff6f00" },
-    "QRS":               { bg: "#fce4ec", fg: "#880e4f" },
-    "QUATIC":            { bg: "#e8eaf6", fg: "#1a237e" },
-    "RE":                { bg: "#f9fbe7", fg: "#827717" },
-    "ICSME":             { bg: "#fff8e1", fg: "#f57f17" },
-    "ICoDSE":            { bg: "#e0f2f1", fg: "#00695c" },
-    "DSA":               { bg: "#e8eaf6", fg: "#1a237e" },
-    "ICCS":              { bg: "#e3f2fd", fg: "#0277bd" },
-    "COMPSAC":           { bg: "#e3f2fd", fg: "#1565c0" },
-    "FORGE":             { bg: "#e0f7fa", fg: "#00838f" },
-    "Internetware":      { bg: "#e0f2f1", fg: "#00796b" },
-    "AIware":            { bg: "#e8eaf6", fg: "#283593" },
-    // ── Security conferences ──
-    "TrustCom":          { bg: "#ffebee", fg: "#c62828" },
-    "APESEC":            { bg: "#fce4ec", fg: "#880e4f" },
-    "USENIX Security":   { bg: "#ffebee", fg: "#b71c1c" },
-    "PST":               { bg: "#ffebee", fg: "#880e4f" },
-    // ── AI / ML / NLP conferences ──
-    "GECCO":             { bg: "#ede7f6", fg: "#6a1b9a" },
-    "NAACL":             { bg: "#f3e5f5", fg: "#7b1fa2" },
-    "LREC-COLING":       { bg: "#e8eaf6", fg: "#3949ab" },
-    "CVPR":              { bg: "#e8eaf6", fg: "#283593" },
-    "MLCAD":             { bg: "#ede7f6", fg: "#4527a0" },
-    "ICCAD":             { bg: "#e3f2fd", fg: "#1a237e" },
-    "IWANN":             { bg: "#ede7f6", fg: "#512da8" },
-    "FLLM":              { bg: "#f3e5f5", fg: "#6a1b9a" },
-    "Cyber-AI":          { bg: "#e8eaf6", fg: "#283593" },
-    // ── HCI / UI conferences ──
-    "UIST":              { bg: "#fce4ec", fg: "#ad1457" },
-    "IUI":               { bg: "#fff3e0", fg: "#e65100" },
-    "ICMI":              { bg: "#fff3e0", fg: "#bf360c" },
-    // ── Systems / distributed / IoT ──
-    "ICDCS":             { bg: "#e3f2fd", fg: "#0288d1" },
-    "IROS":              { bg: "#e0f2f1", fg: "#004d40" },
-    "IoT":               { bg: "#e0f2f1", fg: "#006064" },
-    "ICWS":              { bg: "#e3f2fd", fg: "#01579b" },
-    "MESA":              { bg: "#e8eaf6", fg: "#3f51b5" },
-    "DSC":               { bg: "#e3f2fd", fg: "#0d47a1" },
-    "DTPI":              { bg: "#e8eaf6", fg: "#3f51b5" },
-    "CSR":               { bg: "#e3f2fd", fg: "#0288d1" },
-    "ICWIHI":            { bg: "#e3f2fd", fg: "#1565c0" },
-    "INMIC":             { bg: "#e3f2fd", fg: "#0277bd" },
-    // ── Biomedical / signal processing ──
-    "CISP-BMEI":         { bg: "#e8f5e9", fg: "#2e7d32" },
-    "ISMSIT":            { bg: "#e8eaf6", fg: "#3f51b5" },
-    // ── General / regional conferences ──
-    "UBMK":              { bg: "#f3e5f5", fg: "#7b1fa2" },
-    "NISS":              { bg: "#e8eaf6", fg: "#455a64" },
-    "ICECCME":           { bg: "#e3f2fd", fg: "#1565c0" },
-    "ASYU":              { bg: "#ede7f6", fg: "#512da8" },
-    "SBQS":              { bg: "#e8f5e9", fg: "#388e3c" },
-    "ICIIBMS":           { bg: "#e3f2fd", fg: "#0288d1" },
-    "GCAT":              { bg: "#f9fbe7", fg: "#558b2f" },
-    "ICEBE":             { bg: "#e8eaf6", fg: "#1565c0" },
-    "ICIC":              { bg: "#e3f2fd", fg: "#0277bd" },
-    "FASeG":             { bg: "#f1f8e9", fg: "#558b2f" },
-    "ISCTech":           { bg: "#e0f2f1", fg: "#00897b" },
-    "ComManTel":         { bg: "#e3f2fd", fg: "#1976d2" },
-    "JCSSE":             { bg: "#e3f2fd", fg: "#0288d1" },
-    "ICoCICs":           { bg: "#e0f2f1", fg: "#00796b" },
-    "ITMS":              { bg: "#e8eaf6", fg: "#3f51b5" },
-    "SITA":              { bg: "#e3f2fd", fg: "#1565c0" },
-    "ISWA":              { bg: "#e8f5e9", fg: "#2e7d32" },
-    "CSAE":              { bg: "#e3f2fd", fg: "#0288d1" },
-    "ICSSS":             { bg: "#e3f2fd", fg: "#0d47a1" },
-    "STA":               { bg: "#e8f5e9", fg: "#2e7d32" },
-    "ICACCP":            { bg: "#e3f2fd", fg: "#1565c0" },
-    "R10-HTC":           { bg: "#e8f5e9", fg: "#2e7d32" },
-    "ICRITO":            { bg: "#e3f2fd", fg: "#0277bd" },
-    "ICTIS":             { bg: "#e3f2fd", fg: "#0288d1" },
-    // ── Journals ──
-    "TSE":               { bg: "#e3f2fd", fg: "#1565c0" },
-    "TOSEM":             { bg: "#e8f5e9", fg: "#2e7d32" },
-    "IST":               { bg: "#fff3e0", fg: "#ef6c00" },
-    "JSS":               { bg: "#ede7f6", fg: "#6a1b9a" },
-    "Emp. Soft. Eng.":   { bg: "#fce4ec", fg: "#c62828" },
-    "IEEE Access":       { bg: "#e0f7fa", fg: "#00695c" },
-    "IEEE Soft.":        { bg: "#e1f5fe", fg: "#0277bd" },
-    "IEEE Software":     { bg: "#e1f5fe", fg: "#0277bd" },
-    "IEEE Comp.":        { bg: "#e3f2fd", fg: "#0d47a1" },
-    "IEEE Vehic. Tec. Mag.": { bg: "#e3f2fd", fg: "#1565c0" },
-    "ACM Soft. Eng.":    { bg: "#f3e5f5", fg: "#7b1fa2" },
-    "Proc. ACM Softw. Eng": { bg: "#e8eaf6", fg: "#303f9f" },
-    "Aut. Soft. Eng.":   { bg: "#fff8e1", fg: "#f9a825" },
-    "Com. ACM":          { bg: "#efebe9", fg: "#3e2723" },
-    "CACM":              { bg: "#efebe9", fg: "#3e2723" },
-    "Comp. Std. and Int.": { bg: "#f1f8e9", fg: "#558b2f" },
-    "FGCS":              { bg: "#e0f2f1", fg: "#004d40" },
-    "Sci. Reports.":     { bg: "#f9fbe7", fg: "#558b2f" },
-    "CJA":               { bg: "#e3f2fd", fg: "#0277bd" },
-    "Auto. Innovation":  { bg: "#e0f2f1", fg: "#00796b" },
-    "T-ITS":             { bg: "#e8f5e9", fg: "#2e7d32" },
-    "Proc. Comp. Sci.":  { bg: "#e8eaf6", fg: "#303f9f" },
-    // ── Preprints / catch-all ──
-    "arXiv":             { bg: "#ffcdd2", fg: "#b71c1c" },
-    "Other":             { bg: "#eceff1", fg: "#37474f" },
+const NEUTRAL_CHIP = _chipColor(_C.GRAY);
+
+// Venue chips are colored by publication type (all conferences share the
+// Conference blue, journals the Journal teal, arXiv the arXiv red) — the
+// chipFormatter passes the pubType-anchored pair as overrideColor, so venues
+// need no per-acronym map and new venues in the CSV need no code change.
+const VENUE_TYPE_CHIPS = {
+    conference: _chipColor(_P.pubTypes?.Conference || _C.DEEP_BLUE),
+    journal:    _chipColor(_P.pubTypes?.Journal || _C.TEAL),
+    arxiv:      _chipColor(_P.pubTypes?.arXiv || _C.DEEP_RED),
 };
 
 const PER_VALUE_MAPS = {
-    "PUBLICATION TYPE": PUB_TYPE_COLORS,
-    "TREND":            TREND_COLORS,
-    "LLM ITERACTION":   INTERACTION_COLORS,
-    "CONTEXTUAL INFO":  CONTEXT_COLORS,
-    "APPROACH":         APPROACH_COLORS,
-    "SCOPE":            SCOPE_COLORS,
-    "FOCUS":            FOCUS_COLORS,
+    "PUBLICATION TYPE":     PUB_TYPE_COLORS,
+    "TREND":                TREND_COLORS,
+    "LLM ITERACTION":       INTERACTION_COLORS,
+    "CONTEXTUAL INFO":      CONTEXT_COLORS,
+    "APPROACH":             APPROACH_COLORS,
+    "SCOPE":                SCOPE_COLORS,
+    "FOCUS":                FOCUS_COLORS,
     "TYPE OF CONTRIBUTION": CONTRIBUTION_COLORS,
-    "YEAR":             YEAR_COLORS,
-    "PUBLISHED INTO":   VENUE_COLORS,
+    "YEAR":                 YEAR_COLORS,
+    "LLMs USED":            LLM_COLORS,
 };
 
-function chipHtml(val, colName, url) {
+function _fallbackChipColor(val, colName) {
     const valMap = PER_VALUE_MAPS[colName];
-    const c = valMap
-        ? (valMap[val] || { bg: "#eceff1", fg: "#546e7a" })
-        : (CHIP_COLORS[colName] || { bg: "#e8f5e9", fg: "#2e7d32" });
+    return valMap ? (valMap[val] || NEUTRAL_CHIP) : (CHIP_COLORS[colName] || NEUTRAL_CHIP);
+}
+
+function chipHtml(val, colName, url, overrideColor = null) {
+    const c = overrideColor || _fallbackChipColor(val, colName);
     const chip = `<span class="table-chip" style="background:${c.bg};color:${c.fg}">${val}</span>`;
     if (url) return `<a href="${url}" target="_blank" rel="noopener" style="text-decoration:none">${chip}</a>`;
     return chip;
 }
 
-// ── Column filter state ──
-const columnFilters = {}; // colIdx → Set of checked values
+// Corpus toggle (P/V prefix) + year-range slider.
+function _passesCorpusAndYear(rowData) {
+    if (currentCorpus === "initial" && !rowData.ID?.startsWith("P")) return false;
+    if (currentCorpus === "validation" && !rowData.ID?.startsWith("V")) return false;
+    if (!currentYearRange) return true;
+    const y = Number.parseFloat(rowData.YEAR);
+    return !Number.isNaN(y) && y >= currentYearRange[0] && y <= currentYearRange[1];
+}
 
-function initDataTable(data, headers) {
-    dataTableHeaders = headers;
+// Per-column checkbox filters (columnFilters: field → Set of selected values).
+function _passesColumnFilters(rowData) {
+    for (const [field, selected] of Object.entries(columnFilters)) {
+        if (!selected || selected.size === 0) continue;
+        const cellVal = rowData[field] || "";
+        if (MULTI_VALUE_COLS.has(field)) {
+            const vals = cellVal.split(",").map((v) => v.trim()).filter(Boolean);
+            if (!vals.some((v) => selected.has(v))) return false;
+        } else {
+            const clean = field === "PUBLISHED INTO"
+                ? cellVal.trim().replace(/^[CJ]:\s*/, "")
+                : cellVal.trim();
+            if (!selected.has(clean)) return false;
+        }
+    }
+    return true;
+}
 
-    const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const visibleHeaders = headers.filter((h) => !hiddenSet.has(h));
+// Abstract search box + global search terms (set by chart click-filtering;
+// multiple terms — e.g. a heatmap cell's row × column — are AND-ed).
+function _passesSearchQueries(rowData) {
+    if (!_abstractQuery && _globalQuery.length === 0) return true;
+    const joined = Object.values(rowData).join(" ").toLowerCase();
+    if (_abstractQuery && !joined.includes(_abstractQuery)) return false;
+    return _globalQuery.every((term) => joined.includes(term));
+}
 
-    // Convert YEAR to integer strings
+// ── Unified row predicate (the ONLY filter Tabulator runs) ─────────────
+function _rowPasses(rowData) {
+    if (!_passesCorpusAndYear(rowData)) return false;
+    if (!_passesColumnFilters(rowData)) return false;
+    if (_rlFilterActive && !readingList.has((rowData.TITLE || "").trim())) return false;
+    return _passesSearchQueries(rowData);
+}
+
+function _refilter() {
+    if (tabulator && _tableBuilt) tabulator.refreshFilter();
+}
+
+// Public state setters --------------------------------------------------
+function setTableFilters(corpus, yearRange) {
+    currentCorpus = corpus;
+    currentYearRange = yearRange;
+    _refilter();
+}
+
+globalThis._setAbstractQuery = (q) => { _abstractQuery = (q || "").trim().toLowerCase(); _refilter(); };
+
+// Accepts a single string or an array of terms (AND-ed together).
+globalThis._setGlobalTableSearch = (q) => {
+    const terms = Array.isArray(q) ? q : [q];
+    _globalQuery = terms.map((t) => (t || "").trim().toLowerCase()).filter(Boolean);
+    _refilter();
+};
+
+// ── Column filter state + dropdown UI (vanilla, floating) ──────────────
+const columnFilters = {};        // field name → Set of selected values
+const _columnUniqueVals = {};    // field name → sorted unique values
+
+function updateFilterBadge() {
+    const count = Object.keys(columnFilters).length;
+    const btn = document.getElementById("toggleFilters");
+    if (!btn) return;
+    const isVisible = document.getElementById("tabla").classList.contains("filters-visible");
+    const arrow = isVisible ? "&#9650;" : "&#9660;";
+    btn.innerHTML = count > 0 ? `${arrow} Filters <span class="filter-badge">${count}</span>` : `${arrow} Filters`;
+}
+
+function _computeUniqueVals(data, field) {
+    const vals = new Set();
     data.forEach((r) => {
-        if (r.YEAR) r.YEAR = String(Math.floor(parseFloat(r.YEAR)));
-    });
-
-    const idIdx = visibleHeaders.indexOf("ID");
-    const yearIdx = visibleHeaders.indexOf("YEAR");
-
-    // Custom search: corpus + year range + column filters
-    $.fn.dataTable.ext.search.push((settings, rowData) => {
-        if (settings.nTable.id !== "tabla") return true;
-        const id = rowData[idIdx] || "";
-        if (currentCorpus === "initial" && !id.startsWith("P")) return false;
-        if (currentCorpus === "validation" && !id.startsWith("V")) return false;
-        if (currentYearRange) {
-            const y = parseFloat(rowData[yearIdx]);
-            if (isNaN(y) || y < currentYearRange[0] || y > currentYearRange[1]) return false;
+        const v = r[field];
+        if (!v) return;
+        if (MULTI_VALUE_COLS.has(field)) {
+            v.split(",").forEach((s) => { const t = s.trim(); if (t) vals.add(t); });
+        } else if (field === "PUBLISHED INTO") {
+            vals.add(v.replace(/^[CJ]:\s*/, "").trim());
+        } else {
+            vals.add(v.trim());
         }
-        // Column filters (multi-select)
-        for (const [ci, selected] of Object.entries(columnFilters)) {
-            if (!selected || selected.size === 0) continue;
-            const cellVal = rowData[ci] || "";
-            const colName = visibleHeaders[ci];
-            if (MULTI_VALUE_COLS.has(colName)) {
-                const vals = cellVal.split(",").map((v) => v.trim()).filter(Boolean);
-                if (!vals.some((v) => selected.has(v))) return false;
-            } else {
-                let clean = cellVal.trim();
-                if (colName === "PUBLISHED INTO") clean = clean.replace(/^[CJ]:\s*/, "");
-                if (!selected.has(clean)) return false;
-            }
-        }
-        return true;
     });
+    return [...vals].sort((a, b) => a.localeCompare(b));
+}
 
-    // Chip column defs
-    const allChipCols = [...MULTI_VALUE_COLS, "PUBLICATION TYPE", "YEAR", "PUBLISHED INTO"];
-    const MAX_VISIBLE_CHIPS = 2;
-    const chipDefs = allChipCols
-        .filter((col) => visibleHeaders.includes(col))
-        .map((col) => ({
-            targets: visibleHeaders.indexOf(col),
-            render: (cellData, type, row) => {
-                if (type !== "display" || !cellData) return cellData || "";
-                let raw = cellData;
-                const isVenue = col === "PUBLISHED INTO";
-                if (isVenue) raw = raw.replace(/^[CJ]:\s*/, "");
-                const vals = raw.split(",").map((v) => v.trim()).filter(Boolean);
-                const makeChip = (v) => {
-                    let url = null;
-                    if (isVenue && cellData.startsWith("C:") && typeof _confUrls === "object" && _confUrls) {
-                        const year = row[yearIdx] || "";
-                        url = _confUrls[v + " " + year] || null;
-                    }
-                    return chipHtml(v, col, url);
-                };
-                if (vals.length <= MAX_VISIBLE_CHIPS) {
-                    return vals.map(makeChip).join(" ");
-                }
-                const visible = vals.slice(0, MAX_VISIBLE_CHIPS).map(makeChip).join(" ");
-                const extra = vals.slice(MAX_VISIBLE_CHIPS).map(makeChip).join(" ");
-                const remaining = vals.length - MAX_VISIBLE_CHIPS;
-                return `<span class="chip-wrap">${visible}<span class="chip-extra"> ${extra}</span>` +
-                    `<span class="chip-more" onclick="this.parentElement.classList.toggle('expanded')">+${remaining}</span></span>`;
-            },
-        }));
+function _closeColumnFilterDropdowns() {
+    document.querySelectorAll(".col-filter-dropdown").forEach((d) => d.remove());
+}
 
-    dataTableInstance = $("#tabla").DataTable({
-        data: data.map((row) => visibleHeaders.map((h) => row[h] || "")),
-        columns: visibleHeaders.map((h) => ({ title: h.replace(/_/g, " ") })),
-        pageLength: 25,
-        columnDefs: [
-            ...chipDefs,
-            {
-                targets: visibleHeaders.indexOf("TITLE"),
-                className: "dt-title",
-                render: (cellData, type, row) => {
-                    if (type !== "display") return cellData;
-                    const bibtex = row[visibleHeaders.indexOf("BIBTEX")] || "";
-                    const url = bibtex.match(/url\s*=\s*[{"]([^}"]+)[}"]/i)?.[1];
-                    const rl = window._readingList || new Set();
-                    const starred = rl.has(cellData) ? "starred" : "";
-                    const starChar = starred ? "\u2605" : "\u2606";
-                    const star = `<button class="star-btn ${starred}" data-title="${cellData.replace(/"/g, '&quot;')}" title="Add to reading list">${starChar}</button> `;
-                    const link = url ? `<a href="${url}" target="_blank">${cellData}</a>` : cellData;
-                    return star + link;
-                },
-            },
-            {
-                targets: visibleHeaders.indexOf("BIBTEX"),
-                orderable: false,
-                render: (cellData, type) => {
-                    if (type !== "display" || !cellData) return cellData || "";
-                    const encoded = encodeURIComponent(cellData);
-                    return `<a class="green-btn" href="#modal-bibtex" data-bibtex="${encoded}" onclick="showBibtexFromAttr(this)">BibTeX</a>`;
-                },
-            },
-            {
-                targets: visibleHeaders.indexOf("ABSTRACT"),
-                orderable: false,
-                render: (cellData, type, row) => {
-                    if (type !== "display" || !cellData) return cellData || "";
-                    const bibtex = row[visibleHeaders.indexOf("BIBTEX")] || "";
-                    const authMatch = bibtex.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
-                    const authors = authMatch ? authMatch[1].replace(/\s+/g, " ").trim() : "";
-                    const pubRaw = (row[visibleHeaders.indexOf("PUBLISHED INTO")] || "").trim();
-                    const acronym = pubRaw.replace(/^[CJ]:\s*/, "");
-                    const pubType = (row[visibleHeaders.indexOf("PUBLICATION TYPE")] || "").trim();
-                    let venue = acronym;
-                    if (pubType === "arXiv") {
-                        venue = "arXiv";
-                    } else {
-                        const btMatch = bibtex.match(/booktitle\s*=\s*[{"]([^}"]+)[}"]/i);
-                        const jnMatch = bibtex.match(/journal\s*=\s*[{"]([^}"]+)[}"]/i);
-                        const longName = btMatch ? btMatch[1].trim() : (jnMatch ? jnMatch[1].trim() : "");
-                        if (longName) venue = longName + " (" + acronym + ")";
-                    }
-                    const urlMatch = bibtex.match(/url\s*=\s*[{"]([^}"]+)[}"]/i);
-                    const paperUrl = urlMatch ? urlMatch[1].trim() : "";
-                    const trends = row[visibleHeaders.indexOf("TREND")] || "";
-                    const year = row[yearIdx] || "";
-                    return `<a class="green-btn" href="#modal-abstract"
-                        data-title="${encodeURIComponent(row[visibleHeaders.indexOf("TITLE")] || "")}"
-                        data-authors="${encodeURIComponent(authors)}"
-                        data-venue="${encodeURIComponent(venue)}"
-                        data-conf="${encodeURIComponent(acronym)}"
-                        data-year="${encodeURIComponent(year)}"
-                        data-url="${encodeURIComponent(paperUrl)}"
-                        data-trends="${encodeURIComponent(trends)}"
-                        data-abstract="${encodeURIComponent(cellData)}"
-                        onclick="showAbstractFromAttr(this)">INFO</a>`;
-                },
-            },
-        ],
-        initComplete: function () {
-            const api = this.api();
+function _openColumnFilterDropdown(field, anchorEl) {
+    const existing = document.querySelector(`.col-filter-dropdown[data-field="${field}"]`);
+    _closeColumnFilterDropdowns();
+    if (existing) return; // toggle behaviour: clicking again closes
+    const values = _columnUniqueVals[field] || [];
+    if (!values.length) return;
 
-            // Build filter dropdowns in each header
-            api.columns().every(function () {
-                const column = this;
-                const colIdx = column.index();
-                const colName = visibleHeaders[colIdx];
-                const header = $(column.header());
+    const dd = document.createElement("div");
+    dd.className = "col-filter-dropdown active";
+    dd.dataset.field = field;
+    dd.addEventListener("click", (e) => e.stopPropagation());
 
-                if (NO_FILTER_COLS.has(colName)) return;
+    const controls = document.createElement("div");
+    controls.className = "col-filter-controls";
+    controls.innerHTML = '<a href="#" class="col-filter-action" data-act="all">All</a><a href="#" class="col-filter-action" data-act="none">None</a>';
+    dd.appendChild(controls);
 
-                // Collect unique values
-                const uniqueVals = new Set();
-                column.data().each(function (val) {
-                    if (!val) return;
-                    if (MULTI_VALUE_COLS.has(colName)) {
-                        val.split(",").forEach((v) => {
-                            const t = v.trim();
-                            if (t) uniqueVals.add(t);
-                        });
-                    } else if (colName === "PUBLISHED INTO") {
-                        uniqueVals.add(val.replace(/^[CJ]:\s*/, "").trim());
-                    } else {
-                        uniqueVals.add(val.trim());
-                    }
-                });
-
-                if (uniqueVals.size === 0) return;
-
-                const sorted = [...uniqueVals].sort();
-
-                // Build dropdown HTML
-                const wrapper = $('<div class="col-filter-wrap"></div>');
-                const btn = $('<span class="col-filter-btn" title="Filter">&#9660;</span>');
-                const dropdown = $('<div class="col-filter-dropdown"></div>');
-
-                const controls = $('<div class="col-filter-controls"></div>');
-                const selectAll = $('<a href="#" class="col-filter-action">All</a>');
-                const clearAll = $('<a href="#" class="col-filter-action">None</a>');
-                controls.append(selectAll, clearAll);
-                dropdown.append(controls);
-
-                // Add search box for columns with many values
-                if (sorted.length > 6) {
-                    const search = $('<input type="text" class="col-filter-search" placeholder="Search...">');
-                    dropdown.append(search);
-                    search.on("input", function () {
-                        const q = this.value.toLowerCase();
-                        list.find(".col-filter-item").each(function () {
-                            const text = $(this).find("span").text().toLowerCase();
-                            $(this).toggle(text.includes(q));
-                        });
-                    });
-                }
-
-                const list = $('<div class="col-filter-list"></div>');
-                sorted.forEach((val) => {
-                    const label = $(`<label class="col-filter-item"><input type="checkbox" checked value="${val.replace(/"/g, "&quot;")}"><span>${val}</span></label>`);
-                    list.append(label);
-                });
-                dropdown.append(list);
-
-                wrapper.append(btn, dropdown);
-                header.append(wrapper);
-
-                // Toggle dropdown — use fixed positioning so it escapes the
-                // responsive-table overflow container on narrow viewports.
-                btn.on("click", function (e) {
-                    e.stopPropagation();
-                    $(".col-filter-dropdown.active").not(dropdown).removeClass("active");
-
-                    if (!dropdown.hasClass("active")) {
-                        const rect = btn[0].getBoundingClientRect();
-                        const dropW = 220;
-                        let left = rect.left;
-                        if (left + dropW > window.innerWidth - 8) {
-                            left = rect.right - dropW;
-                        }
-                        dropdown.css({
-                            position: "fixed",
-                            top:  rect.bottom + 2,
-                            left: Math.max(4, left),
-                            width: dropW,
-                        });
-                    }
-                    dropdown.toggleClass("active");
-                });
-
-                // Prevent sorting when clicking inside dropdown
-                dropdown.on("click", function (e) {
-                    e.stopPropagation();
-                });
-
-                // Select All / None
-                selectAll.on("click", function (e) {
-                    e.preventDefault();
-                    list.find("input[type=checkbox]").prop("checked", true).first().trigger("change");
-                });
-                clearAll.on("click", function (e) {
-                    e.preventDefault();
-                    list.find("input[type=checkbox]").prop("checked", false).first().trigger("change");
-                });
-
-                // On checkbox change, update filter
-                list.on("change", "input[type=checkbox]", function () {
-                    const checked = [];
-                    list.find("input[type=checkbox]:checked").each(function () {
-                        checked.push($(this).val());
-                    });
-                    const allChecked = checked.length === sorted.length;
-                    if (allChecked || checked.length === 0) {
-                        delete columnFilters[colIdx];
-                        btn.removeClass("col-filter-active");
-                    } else {
-                        columnFilters[colIdx] = new Set(checked);
-                        btn.addClass("col-filter-active");
-                    }
-                    updateFilterBadge();
-                    dataTableInstance.draw();
-                });
+    if (values.length > 6) {
+        const search = document.createElement("input");
+        search.type = "text";
+        search.className = "col-filter-search";
+        search.placeholder = "Search...";
+        search.addEventListener("input", () => {
+            const q = search.value.toLowerCase();
+            dd.querySelectorAll(".col-filter-item").forEach((item) => {
+                item.style.display = item.querySelector("span").textContent.toLowerCase().includes(q) ? "" : "none";
             });
-        },
-    });
-
-    // Close dropdowns when clicking outside
-    $(document).on("click", function () {
-        $(".col-filter-dropdown.active").removeClass("active");
-    });
-
-    function updateFilterBadge() {
-        const count = Object.keys(columnFilters).length;
-        const btn = document.getElementById("toggleFilters");
-        const isVisible = document.getElementById("tabla").classList.contains("filters-visible");
-        const arrow = isVisible ? "&#9650;" : "&#9660;";
-        btn.innerHTML = count > 0 ? `${arrow} Filters <span class="filter-badge">${count}</span>` : `${arrow} Filters`;
+        });
+        dd.appendChild(search);
     }
 
-    // Toggle filters visibility
+    const list = document.createElement("div");
+    list.className = "col-filter-list";
+    const selected = columnFilters[field];
+    values.forEach((val) => {
+        const label = document.createElement("label");
+        label.className = "col-filter-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = val;
+        cb.checked = !selected || selected.has(val);
+        const span = document.createElement("span");
+        span.textContent = val;
+        label.appendChild(cb);
+        label.appendChild(span);
+        list.appendChild(label);
+    });
+    dd.appendChild(list);
+
+    const apply = () => {
+        const checked = [...list.querySelectorAll("input:checked")].map((c) => c.value);
+        if (checked.length === values.length || checked.length === 0) delete columnFilters[field];
+        else columnFilters[field] = new Set(checked);
+        anchorEl.classList.toggle("col-filter-active", !!columnFilters[field]);
+        updateFilterBadge();
+        _refilter();
+    };
+    list.addEventListener("change", apply);
+    controls.addEventListener("click", (e) => {
+        const act = e.target.dataset?.act;
+        if (!act) return;
+        e.preventDefault();
+        list.querySelectorAll("input").forEach((cb) => { cb.checked = act === "all"; });
+        apply();
+    });
+
+    document.body.appendChild(dd);
+    const rect = anchorEl.getBoundingClientRect();
+    dd.style.position = "fixed";
+    dd.style.top = `${rect.bottom + 4}px`;
+    dd.style.left = `${Math.min(rect.left, window.innerWidth - 250)}px`;
+    dd.style.zIndex = "1200";
+}
+
+document.addEventListener("click", _closeColumnFilterDropdowns);
+
+// Header title with an embedded filter button (visible when .filters-visible).
+function _filterTitleFormatter(field) {
+    return (cell) => {
+        const wrap = document.createElement("span");
+        wrap.className = "th-filter-wrap";
+        wrap.textContent = field;
+        const btn = document.createElement("span");
+        btn.className = "col-filter-btn";
+        btn.title = "Filter";
+        btn.innerHTML = "&#9660;";
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            _openColumnFilterDropdown(field, btn);
+        });
+        wrap.appendChild(btn);
+        return wrap;
+    };
+}
+
+// ── Tabulator init ──────────────────────────────────────────────────────
+function initDataTable(data, headers) {
+    // Normalise YEAR once (2023.0 → "2023")
+    data.forEach((r) => { if (r.YEAR) r.YEAR = String(Math.floor(Number.parseFloat(r.YEAR))); });
+
+    const visibleHeaders = headers.filter((h) => !HIDDEN_COLS.has(h));
+    visibleHeaders.filter((h) => !NO_FILTER_COLS.has(h)).forEach((h) => {
+        _columnUniqueVals[h] = _computeUniqueVals(data, h);
+    });
+
+    const MAX_VISIBLE_CHIPS = 2;
+    const chipFormatter = (field) => (cell) => {
+        const cellData = cell.getValue() || "";
+        if (!cellData) return "";
+        const rowData = cell.getRow().getData();
+        let raw = cellData;
+        const isVenue = field === "PUBLISHED INTO";
+        if (isVenue) raw = raw.replace(/^[CJ]:\s*/, "");
+        const vals = raw.split(",").map((v) => v.trim()).filter(Boolean);
+        let venueColor = null;
+        if (isVenue) {
+            if (cellData.startsWith("C:")) venueColor = VENUE_TYPE_CHIPS.conference;
+            else if (cellData.startsWith("J:")) venueColor = VENUE_TYPE_CHIPS.journal;
+            else venueColor = VENUE_TYPE_CHIPS.arxiv;
+        }
+        const makeChip = (v) => {
+            const chipUrl = (isVenue && cellData.startsWith("C:") && typeof _confUrls === "object" && _confUrls)
+                ? (_confUrls[v + " " + (rowData.YEAR || "")] || null) : null;
+            return chipHtml(v, field, chipUrl, venueColor);
+        };
+        if (vals.length <= MAX_VISIBLE_CHIPS) return vals.map(makeChip).join(" ");
+        const visible = vals.slice(0, MAX_VISIBLE_CHIPS).map(makeChip).join(" ");
+        const extra = vals.slice(MAX_VISIBLE_CHIPS).map(makeChip).join(" ");
+        const remaining = vals.length - MAX_VISIBLE_CHIPS;
+        return `<span class="chip-wrap">${visible}<span class="chip-extra"> ${extra}</span>` +
+            `<span class="chip-more">+${remaining}</span></span>`;
+    };
+
+    const chipCols = new Set([...MULTI_VALUE_COLS, "PUBLICATION TYPE", "YEAR", "PUBLISHED INTO"]);
+
+    // Expand the hidden chips behind a "+N" toggle: allow the cell to wrap
+    // (Tabulator cells are nowrap by default) and re-measure the row height,
+    // otherwise the revealed chips stay clipped and invisible.
+    const chipMoreCellClick = (e, cell) => {
+        const more = e.target.closest(".chip-more");
+        if (!more) return;
+        e.stopPropagation();
+        const wrap = more.parentElement;
+        wrap.classList.toggle("expanded");
+        cell.getElement().classList.toggle("chips-expanded", wrap.classList.contains("expanded"));
+        cell.getRow().normalizeHeight();
+    };
+
+    const columns = [
+        { // reading-list star
+            title: "★", headerSort: false, width: 42, hozAlign: "center", download: false,
+            formatter: (cell) => {
+                const t = (cell.getRow().getData().TITLE || "").trim();
+                const on = readingList.has(t);
+                return `<button class="star-btn ${on ? "starred" : ""}" title="Add to reading list">${on ? "★" : "☆"}</button>`;
+            },
+            cellClick: (e, cell) => {
+                e.stopPropagation();
+                const t = (cell.getRow().getData().TITLE || "").trim();
+                if (readingList.has(t)) readingList.delete(t);
+                else readingList.add(t);
+                _saveReadingList();
+                cell.getRow().reformat();
+                if (_rlFilterActive) _refilter();
+            },
+        },
+        ...visibleHeaders.map((h) => {
+            const col = { title: h, field: h };
+            if (!NO_FILTER_COLS.has(h)) col.titleFormatter = _filterTitleFormatter(h);
+            if (chipCols.has(h)) {
+                col.formatter = chipFormatter(h);
+                col.cellClick = chipMoreCellClick;
+            }
+            if (h === "TITLE") {
+                col.width = 340;
+                col.cssClass = "dt-title";
+                col.formatter = (cell) => {
+                    const rowData = cell.getRow().getData();
+                    const title = cell.getValue() || "";
+                    const url = (rowData.BIBTEX || "").match(/url\s*=\s*[{"]([^}"]+)[}"]/i)?.[1];
+                    return url ? `<a href="${url}" target="_blank">${title}</a>` : title;
+                };
+                col.tooltip = (e, cell) => {
+                    const abs = (cell.getRow().getData().ABSTRACT || "").trim();
+                    if (!abs) return "";
+                    return abs.length > 220 ? abs.substring(0, 220) + "..." : abs;
+                };
+            }
+            if (h === "BIBTEX") {
+                col.headerSort = false;
+                col.width = 92;
+                col.formatter = (cell) => (cell.getValue() ? '<button class="green-btn bibtex-btn">BibTeX</button>' : "");
+                col.cellClick = (e, cell) => {
+                    e.stopPropagation();
+                    const bib = cell.getRow().getData().BIBTEX;
+                    if (bib) showBibtex(bib);
+                };
+            }
+            if (h === "ABSTRACT") {
+                col.headerSort = false;
+                col.width = 80;
+                col.formatter = (cell) => (cell.getValue() ? '<button class="green-btn info-btn">INFO</button>' : "");
+                col.cellClick = (e, cell) => {
+                    e.stopPropagation();
+                    showAbstract(_abstractArgs(cell.getRow().getData()));
+                };
+            }
+            return col;
+        }),
+    ];
+
+    tabulator = new Tabulator("#tabla", {
+        data,
+        columns,
+        layout: "fitData",
+        pagination: true,
+        paginationSize: 25,
+        paginationCounter: "rows",
+        persistence: { sort: true },
+        persistenceID: "slr-table",
+        placeholder: "No matching articles",
+    });
+
+    tabulator.on("tableBuilt", () => {
+        _tableBuilt = true;
+        tabulator.setFilter(_rowPasses);
+    });
+
+    // Row click anywhere (except links/buttons/chips) opens the INFO modal.
+    tabulator.on("rowClick", (e, row) => {
+        if (e.target.closest("a, button, .chip-more, .col-filter-btn")) return;
+        showAbstract(_abstractArgs(row.getData()));
+    });
+
+    // Filters visibility toggle (clears all column filters when hidden)
     document.getElementById("toggleFilters").addEventListener("click", () => {
-        const table = document.getElementById("tabla");
-        const visible = table.classList.toggle("filters-visible");
+        const tableEl = document.getElementById("tabla");
+        const visible = tableEl.classList.toggle("filters-visible");
         if (!visible) {
-            // Clear all active filters when hiding
             Object.keys(columnFilters).forEach((k) => delete columnFilters[k]);
-            $(".col-filter-btn").removeClass("col-filter-active");
-            $(".col-filter-list input[type=checkbox]").prop("checked", true);
-            $(".col-filter-dropdown.active").removeClass("active");
-            dataTableInstance.draw();
+            document.querySelectorAll(".col-filter-btn.col-filter-active").forEach((b) => b.classList.remove("col-filter-active"));
+            _closeColumnFilterDropdowns();
+            _refilter();
         }
         updateFilterBadge();
     });
 
-    // Page length select
     document.getElementById("pageLengthSelect").addEventListener("change", (e) => {
-        dataTableInstance.page.len(Number(e.target.value)).draw();
+        const v = Number(e.target.value);
+        tabulator.setPageSize(v === -1 ? data.length : v);
     });
-}
 
-function setTableFilters(corpus, yearRange) {
-    currentCorpus = corpus;
-    currentYearRange = yearRange;
-    if (dataTableInstance) dataTableInstance.draw();
+    _saveReadingList(); // initialise badge
+
+    const showBtn = document.getElementById("showReadingList");
+    if (showBtn) {
+        showBtn.addEventListener("click", () => {
+            _rlFilterActive = !_rlFilterActive;
+            showBtn.classList.toggle("active-rl", _rlFilterActive);
+            _refilter();
+        });
+    }
 }

@@ -2,8 +2,9 @@
 
 # Replication package for *'A Research Roadmap on the Usage of Large Language Models in Software Testing'*
 
-This repository contains the replication package of the paper *A Research Roadmap on the Usage of Large Language Models in Software Testing*
-published at *TO-DO*.
+This repository contains the replication package of the paper *A Research Roadmap on the Usage of Large Language Models
+in Software Testing* published at *TO-DO*. The roadmap is considered "live" because we pursue the community to add new
+works and align them with the trends and dimensions proposed (See [CONTRIBUTING](#contributing))
 
 This replication package includes the raw data from the articles analyzed in the roadmap and an
 [interactive view of them hosted on GitHub Pages](https://augustocristian.github.io/llm-testing-roadmap-rp/).
@@ -98,6 +99,48 @@ To run the experimentation script provided in `📦 retrieval/`, Python version 
 
 See the general contribution policies and guidelines for *giis-uniovi* at
 [CONTRIBUTING.md](https://github.com/giis-uniovi/.github/blob/main/profile/CONTRIBUTING.md).
+
+### Proposing a new article for the corpus
+
+Found a paper on LLM-based software testing that isn't in the roadmap yet? You can propose it by
+opening a pull request that adds one row to `data/articlecorpus.csv` (`;`-separated). Please:
+
+1. Fork the repository and create a branch for your addition.
+2. Append a **single new row** to `data/articlecorpus.csv` for your article or propose some modification in the existing
+   ones. Make the minimal modifications as possible to ease the reviewer work.
+3. Assign it an **`ID` of the form `Nxxx`** (`N` for *New*, followed by a zero-padded 3-digit
+   number continuing the existing sequence, e.g. `N001`, `N002`, ...). This prefix marks the row
+   as a community-contributed candidate, separate from the paper's own `P` (initial) and
+   `V` (validation) sets, so it doesn't affect the dashboard's existing Corpus filter or
+   any of the reported study statistics until a maintainer reviews and re-classifies it.
+4. Fill in the following fields for your row (see the `articlecorpus.csv` column reference near
+   the top of this file for the full description of every column):
+
+   | Field                  | Required      | Notes                                                                                                                                                                                      |
+   |------------------------|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+   | `ID`                   | Yes           | `Nxxx`, e.g. `N001`                                                                                                                                                                        |
+   | `TITLE`                | Yes           | Full article title                                                                                                                                                                         |
+   | `YEAR`                 | Yes           | Publication year (or year made available on arXiv)                                                                                                                                         |
+   | `KEY`                  | Yes           | BibTeX citation key                                                                                                                                                                        |
+   | `PUBLISHED INTO`       | Yes           | Venue name prefixed with `C:` (conference) or `J:` (journal); leave as the venue name only for arXiv                                                                                       |
+   | `PUBLICATION TYPE`     | Yes           | `Conference`, `Journal`, or `arXiv`                                                                                                                                                        |
+   | `BIBTEX`               | Yes           | Full BibTeX entry (used for the citation/BibTeX export features and to back-fill authors/venue in the table)                                                                               |
+   | `DATABASE`             | Yes           | Source database: `ACM`, `IEEE`, `Elsevier`, `Springer`, or `Orig`                                                                                                                          |
+   | `TYPE OF CONTRIBUTION` | Yes           | `Survey`, `New Method/Tool`, or `Evaluation`                                                                                                                                               |
+   | `ABSTRACT`             | Yes           | Short abstract                                                                                                                                                                             |
+   | `TREND`                | Yes           | One or more (comma-separated) of: `Unit Test Generation`, `High-Level Test Gen`, `Oracle Derivation`, `Test Augmentation or Improvement`, `Test Configuration or Execution`, `Reflections` |
+   | `LLM ITERACTION`       | Yes           | `Pure Prompting` or `Hybrid Prompting`                                                                                                                                                     |
+   | `CONTEXTUAL INFO`      | Yes           | `None`, `RAG`, or `Fine-Tuning`                                                                                                                                                            |
+   | `APPROACH`             | Yes           | `Tool/Framework` or `Agent`                                                                                                                                                                |
+   | `SCOPE`                | Yes           | `Functional` or `Non-Functional`                                                                                                                                                           |
+   | `FOCUS`                | Yes           | `Code/Procedure`, `Data`, or `Optimization`                                                                                                                                                |
+   | `BENCHMARK`            | If applicable | Comma-separated benchmark name(s) used                                                                                                                                                     |
+   | `LLMs USED`            | If applicable | Comma-separated LLM name(s)/family used                                                                                                                                                    |
+   | `EVALUATION METRIC`    | If applicable | Comma-separated evaluation metric(s) used                                                                                                                                                  |
+   | `TOOL`                 | If applicable | Name of the tool proposed by the article, if any                                                                                                                                           |
+
+5. Open the pull request describing the article and why it fits the roadmap's scope. A maintainer
+   will validate it  and, once accepted, it will appear in the live roadmap.
 
 ## Contact
 

@@ -24,9 +24,6 @@ function formatCitationAPA(data) {
 }
 
 function initCitation() {
-    const citationModalElem = document.getElementById("modal-citation");
-    const citationModal = M.Modal.init(citationModalElem);
-
     const bibtexBtn = document.getElementById("download-bibtex");
     const showCitationBtn = document.getElementById("show-citation");
     const copyCitationBtn = document.getElementById("copy-citation");
@@ -36,7 +33,7 @@ function initCitation() {
 
     fetch("CITATION.cff")
         .then((res) => {
-            if (!res.ok) throw new Error(res.status);
+            if (!res.ok) throw new Error(String(res.status));
             return res.text();
         })
         .then((text) => {
@@ -63,7 +60,7 @@ function initCitation() {
 
     bibtexBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        if (!citationData) return alert("Citation not loaded yet.");
+        if (!citationData) { toast("Citation not loaded yet."); return; }
         const bibtexStr = formatBibTeX(citationData);
         const blob = new Blob([bibtexStr], { type: "text/x-bibtex" });
         const url = URL.createObjectURL(blob);
@@ -77,15 +74,14 @@ function initCitation() {
     });
 
     showCitationBtn.addEventListener("click", () => {
-        if (!citationData) return alert("Citation not loaded yet.");
+        if (!citationData) { toast("Citation not loaded yet."); return; }
         citationContent.innerHTML = formatCitationAPA(citationData);
-        citationModal.open();
+        openDialog("modal-citation");
     });
 
-    copyCitationBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (!citationData) return alert("Citation not loaded yet.");
+    copyCitationBtn.addEventListener("click", () => {
+        if (!citationData) { toast("Citation not loaded yet."); return; }
         const text = citationContent.innerText || "";
-        navigator.clipboard.writeText(text).then(() => M.toast({ html: "Citation copied!" }));
+        navigator.clipboard.writeText(text).then(() => toast("Citation copied!"));
     });
 }

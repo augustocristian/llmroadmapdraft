@@ -1,38 +1,59 @@
-document.addEventListener("DOMContentLoaded", () => {
-    M.FormSelect.init(document.querySelectorAll("select:not(.browser-default)"));
-    M.Modal.init(document.querySelectorAll(".modal"));
+// ── Export filename builder ────────────────────────────────────────────────
+// Reads live filter state from globalThis._activeFilters (set by the loadCSV
+// callback below). Format: {chart_name}_{corpus}_{yearStart}-{yearEnd}.{ext}
+function _buildExportFilename(chartId, ext) {
+    const f = globalThis._activeFilters || {};
+    const corpus = (f.corpus && f.corpus !== "all") ? f.corpus : "all";
+    const yr0 = f.yearRange?.[0] ?? "";
+    const yr1 = f.yearRange?.[1] ?? "";
+    const years = yr0 && yr1 ? `${yr0}-${yr1}` : "";
 
-    initCitation();
+    let name = chartId;
+    if (chartId === "grafica") {
+        const sel = document.getElementById("graficoSelect");
+        const txt = (typeof chartLabel === "function" && sel ? chartLabel(sel.value) : null)
+            || sel?.options[sel?.selectedIndex]?.text || "chart";
+        name = txt.toLowerCase().replace(/[×&]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    } else if (chartId === "chart-bubble") {
+        name = "trends_overview";
+    }
 
-    // Copy BibTeX button
-    document.getElementById("copy-bibtex").addEventListener("click", (e) => {
-        e.preventDefault();
+    const safe = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    return [name, safe(corpus), years].filter(Boolean).join("_") + "." + ext;
+}
+
+// ── Copy BibTeX button ──
+function initCopyBibtex() {
+    document.getElementById("copy-bibtex").addEventListener("click", () => {
         const text = document.getElementById("modal-bibtex-content").textContent;
-        navigator.clipboard.writeText(text).then(() => {
-            M.toast({ html: "BibTeX copied!", classes: "teal" });
-        });
+        navigator.clipboard.writeText(text).then(() => toast("BibTeX copied!"));
     });
+}
 
-    // ── Dark mode toggle (icon button) ──
+// ── Dark mode toggle (icon button) ──
+function initDarkModeToggle() {
     const darkToggle = document.getElementById("dark-mode-toggle");
     const isDark = localStorage.getItem("darkMode") === "true";
     if (isDark) document.body.classList.add("dark-mode");
-    if (darkToggle) {
-        const updateBtn = (dark) => {
-            darkToggle.title = dark ? "Switch to light mode" : "Switch to dark mode";
-            darkToggle.setAttribute("aria-label", darkToggle.title);
-        };
-        updateBtn(isDark);
-        darkToggle.addEventListener("click", () => {
-            const nowDark = document.body.classList.toggle("dark-mode");
-            localStorage.setItem("darkMode", nowDark);
-            updateBtn(nowDark);
-            applyChartDefaults();
-            Object.values(chartInstances).forEach((c) => c.update());
-        });
-    }
+    if (!darkToggle) return;
 
-    // ── Back to top button ──
+    const updateBtn = (dark) => {
+        darkToggle.title = dark ? "Switch to light mode" : "Switch to dark mode";
+        darkToggle.setAttribute("aria-label", darkToggle.title);
+    };
+    updateBtn(isDark);
+    darkToggle.addEventListener("click", () => {
+        const nowDark = document.body.classList.toggle("dark-mode");
+        localStorage.setItem("darkMode", nowDark);
+        updateBtn(nowDark);
+        // ECharts themes are fixed at init time — re-render everything with
+        // the new theme once data is available.
+        if (typeof globalThis._rerenderAllCharts === "function") globalThis._rerenderAllCharts();
+    });
+}
+
+// ── Back to top button ──
+function initBackToTop() {
     const backToTop = document.getElementById("backToTop");
     window.addEventListener("scroll", () => {
         backToTop.style.display = window.scrollY > 400 ? "block" : "none";
@@ -40,10 +61,13 @@ document.addEventListener("DOMContentLoaded", () => {
     backToTop.addEventListener("click", () => {
         window.scrollTo({ top: 0, behavior: "smooth" });
     });
+}
 
-    // ── Mini-nav smooth scroll + active tracking ──
+// ── Mini-nav smooth scroll + active tracking ──
+function initMiniNav() {
     const navLinks = document.querySelectorAll(".mini-nav-link");
     const sections = [...navLinks].map((l) => document.getElementById(l.dataset.section)).filter(Boolean);
+
     navLinks.forEach((link) => {
         link.addEventListener("click", (e) => {
             e.preventDefault();
@@ -51,6 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
         });
     });
+
     const updateActiveNav = () => {
         const scrollY = window.scrollY + 120;
         let current = sections[0];
@@ -60,8 +85,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     };
     window.addEventListener("scroll", updateActiveNav);
+}
 
-    // ── Chart download (PNG / SVG dropdown) ──
+// ── Chart download (PNG dropdown) ──
+function initChartDownloads() {
     document.querySelectorAll(".chart-download-btn").forEach((btn) => {
         const menu = btn.nextElementSibling;
         btn.addEventListener("click", (e) => {
@@ -75,32 +102,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     document.querySelectorAll(".chart-dl-png").forEach((btn) => {
         btn.addEventListener("click", () => {
-            const canvas = document.getElementById(btn.dataset.canvas);
-            if (!canvas) return;
+            const chart = chartInstances[btn.dataset.chart];
+            if (!chart) return;
+            const dark = document.body.classList.contains("dark-mode");
             const link = document.createElement("a");
-            link.download = btn.dataset.canvas + ".png";
-            link.href = canvas.toDataURL("image/png");
+            link.download = _buildExportFilename(btn.dataset.chart, "png");
+            link.href = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: dark ? "#1a1a2e" : "#ffffff" });
             link.click();
         });
     });
-    document.querySelectorAll(".chart-dl-svg").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            const canvas = document.getElementById(btn.dataset.canvas);
-            if (!canvas) return;
-            const w = canvas.width, h = canvas.height;
-            const img = canvas.toDataURL("image/png");
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
-                `<image href="${img}" width="${w}" height="${h}"/></svg>`;
-            const blob = new Blob([svg], { type: "image/svg+xml" });
-            const link = document.createElement("a");
-            link.download = btn.dataset.canvas + ".svg";
-            link.href = URL.createObjectURL(blob);
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-        });
-    });
+}
 
-    // ── Keyboard shortcuts ──
+// ── Keyboard shortcuts ──
+function initKeyboardShortcuts() {
     document.addEventListener("keydown", (e) => {
         // Ctrl+K → focus abstract search
         if ((e.ctrlKey || e.metaKey) && e.key === "k") {
@@ -113,162 +127,173 @@ document.addEventListener("DOMContentLoaded", () => {
             document.querySelectorAll(".col-filter-dropdown.active, .col-vis-dropdown.active").forEach((d) => d.classList.remove("active"));
         }
     });
+}
 
-    // ── Load data ──
-    loadCSV((data, headers) => {
-        // Store globally for cross-linking and related papers
-        globalThis._allData = data;
-        globalThis._allHeaders = headers;
+// ── Year bounds from the loaded data ──
+function _getYearBounds(data) {
+    const years = data.map((r) => Math.floor(Number.parseFloat(r.YEAR))).filter((y) => !Number.isNaN(y));
+    return { minYear: Math.min(...years), maxYear: Math.max(...years) };
+}
 
-        initExport(data, headers);
-        initDataTable(data, headers);
+// ── Recompute filtered data + redraw everything that depends on it ──
+function _refreshDashboard(data, state) {
+    globalThis._activeFilters = { corpus: state.corpus, yearRange: state.yearRange };
+    const filtered = applyFilters(data, state.corpus, state.yearRange);
+    const chartKey = document.getElementById("graficoSelect").value;
+    updateStatsAnimated(filtered);
+    updateSummaryStats(filtered);
+    renderBubbleDashboard(filtered);
+    renderInsightsChart(filtered, chartKey);
+    setTableFilters(state.corpus, state.yearRange);
+    updateHash(state.corpus, state.yearRange, chartKey);
+}
 
-        // Re-init Materialize selects (not browser-default ones)
-        M.FormSelect.init(document.querySelectorAll("select:not(.browser-default)"));
+// Re-render every visible chart with the current ECharts theme (used by the
+// dark-mode toggle — themes are fixed at echarts.init time).
+function _rerenderCharts(data, state) {
+    const filtered = applyFilters(data, state.corpus, state.yearRange);
+    renderBubbleDashboard(filtered);
+    renderInsightsChart(filtered, document.getElementById("graficoSelect").value);
+}
 
-        // Compute year range from data
-        const allYears = data.map((r) => Math.floor(Number.parseFloat(r.YEAR))).filter((y) => !Number.isNaN(y));
-        const minYear = Math.min(...allYears);
-        const maxYear = Math.max(...allYears);
+// ── Year range slider ──
+// rangeMax must be strictly greater than rangeMin to avoid noUiSlider locking
+// up when all data falls in a single year.
+function initYearSlider(state, minYear, maxYear, refresh) {
+    const sliderEl = document.getElementById("yearSlider");
+    const rangeMax = Math.max(maxYear, minYear + 1);
+    noUiSlider.create(sliderEl, {
+        start: state.yearRange,
+        connect: true,
+        step: 1,
+        margin: 0,
+        range: { min: minYear, max: rangeMax },
+        format: {
+            to: (v) => Math.round(v),
+            from: Number,
+        },
+    });
 
-        let activeCorpus = "all";
-        let activeYearRange = [minYear, maxYear];
+    document.getElementById("yearMinLabel").textContent = state.yearRange[0];
+    document.getElementById("yearMaxLabel").textContent = state.yearRange[1];
 
-        // ── Read state from URL hash ──
-        const hashState = parseHash();
-        if (hashState.corpus) activeCorpus = hashState.corpus;
-        if (hashState.yearMin && hashState.yearMax) activeYearRange = [hashState.yearMin, hashState.yearMax];
+    sliderEl.noUiSlider.on("update", (values) => {
+        state.yearRange = [values[0], values[1]];
+        document.getElementById("yearMinLabel").textContent = values[0];
+        document.getElementById("yearMaxLabel").textContent = values[1];
+        refresh();
+    });
+}
 
-        // Set corpus button from hash
-        if (hashState.corpus) {
-            document.querySelectorAll("#corpusToggle .corpus-btn").forEach((b) => {
-                b.classList.toggle("active", b.dataset.corpus === activeCorpus);
-            });
-        }
-
-        // Define refresh
-        function refresh() {
-            const filtered = applyFilters(data, activeCorpus, activeYearRange);
-            updateStatsAnimated(filtered);
-            updateSummaryStats(filtered);
-            renderBubbleDashboard(filtered);
-            renderInsightsChart(filtered, document.getElementById("graficoSelect").value);
-            setTableFilters(activeCorpus, activeYearRange);
-            updateHash(activeCorpus, activeYearRange, document.getElementById("graficoSelect").value);
-        }
-
-        // Init year slider — rangeMax must be strictly greater than rangeMin
-        // to avoid noUiSlider locking up when all data falls in a single year.
-        const sliderEl = document.getElementById("yearSlider");
-        const rangeMin = minYear;
-        const rangeMax = Math.max(maxYear, minYear + 1);
-        noUiSlider.create(sliderEl, {
-            start: activeYearRange,
-            connect: true,
-            step: 1,
-            margin: 0,
-            range: { min: rangeMin, max: rangeMax },
-            format: {
-                to: (v) => Math.round(v),
-                from: Number,
-            },
-        });
-
-        document.getElementById("yearMinLabel").textContent = activeYearRange[0];
-        document.getElementById("yearMaxLabel").textContent = activeYearRange[1];
-
-        // Year slider change
-        sliderEl.noUiSlider.on("update", (values) => {
-            activeYearRange = [values[0], values[1]];
-            document.getElementById("yearMinLabel").textContent = values[0];
-            document.getElementById("yearMaxLabel").textContent = values[1];
+// ── Corpus toggle buttons ──
+function initCorpusToggle(state, refresh) {
+    document.querySelectorAll("#corpusToggle .corpus-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            document.querySelectorAll("#corpusToggle .corpus-btn").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            state.corpus = btn.dataset.corpus;
             refresh();
         });
-
-        // Corpus toggle buttons
-        const corpusBtns = document.querySelectorAll("#corpusToggle .corpus-btn");
-        corpusBtns.forEach((btn) => {
-            btn.addEventListener("click", () => {
-                for (const b of corpusBtns) b.classList.remove("active");
-                btn.classList.add("active");
-                activeCorpus = btn.dataset.corpus;
-                refresh();
-            });
-        });
-
-        // Insights chart selector
-        const chartSelect = document.getElementById("graficoSelect");
-        if (hashState.chart) {
-            chartSelect.value = hashState.chart;
-            M.FormSelect.init(chartSelect);
-        }
-        chartSelect.addEventListener("change", (e) => {
-            const filtered = applyFilters(data, activeCorpus, activeYearRange);
-            renderInsightsChart(filtered, e.target.value);
-            updateHash(activeCorpus, activeYearRange, e.target.value);
-        });
-
-        // ── Abstract full-text search ──
-        const abstractInput = document.getElementById("abstractSearch");
-        if (abstractInput) {
-            let debounce = null;
-            abstractInput.addEventListener("input", () => {
-                clearTimeout(debounce);
-                debounce = setTimeout(() => {
-                    if (dataTableInstance) dataTableInstance.draw();
-                }, 300);
-            });
-            $.fn.dataTable.ext.search.push((settings, searchData, index, rowData) => {
-                if (settings.nTable.id !== "tabla") return true;
-                const q = abstractInput.value.trim().toLowerCase();
-                if (!q) return true;
-                const fullText = rowData.join(" ").toLowerCase();
-                return fullText.includes(q);
-            });
-        }
-
-        // ── Column visibility toggle ──
-        initColumnVisibility(headers);
-
-        // ── Export filtered data ──
-        initExportFiltered(data, headers);
-
-        // ── Bulk BibTeX export ──
-        initBulkBibtex(data, headers);
-
-        // ── Reading list / bookmarks ──
-        initReadingList(data, headers);
-
-        // ── Table row click → open INFO modal ──
-        initRowClick();
-
-        // ── Card collapse ──
-        initCardCollapse();
-
-        // ── Table sort persistence ──
-        initSortPersistence();
-
-        // ── Active filter chips ──
-        initActiveFilterChips(headers);
-
-        // ── Sparklines ──
-        renderSparklines(data);
-
-        // ── Mobile card view ──
-        initMobileCardView(headers);
-
-        // ── Search highlighting ──
-        initSearchHighlight();
-
-        // ── Tooltip abstract preview ──
-        initTitleTooltips(data, headers);
-
-        // ── Hide loading, show content ──
-        document.getElementById("main-content").style.display = "";
-        const overlay = document.getElementById("loading-overlay");
-        overlay.classList.add("hidden");
-        setTimeout(() => overlay.remove(), 400);
     });
+}
+
+// ── Insights chart selector ──
+function initChartSelector(data, state, hashState) {
+    const chartSelect = document.getElementById("graficoSelect");
+    if (hashState.chart && globalThis.CHART_REGISTRY?.[hashState.chart]) {
+        chartSelect.value = hashState.chart;
+        renderInsightsChart(applyFilters(data, state.corpus, state.yearRange), hashState.chart);
+    }
+    chartSelect.addEventListener("change", (e) => {
+        const filtered = applyFilters(data, state.corpus, state.yearRange);
+        renderInsightsChart(filtered, e.target.value);
+        updateHash(state.corpus, state.yearRange, e.target.value);
+    });
+}
+
+// ── Abstract full-text search (feeds the unified Tabulator predicate) ──
+function initAbstractSearchInput() {
+    const abstractInput = document.getElementById("abstractSearch");
+    if (!abstractInput) return;
+    let debounce = null;
+    abstractInput.addEventListener("input", () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => globalThis._setAbstractQuery(abstractInput.value), 300);
+    });
+}
+
+// ── Reveal the dashboard once initial charts are rendered ──
+function _revealDashboard() {
+    document.getElementById("main-content").style.display = "";
+    // Charts were initialised while #main-content was display:none (0×0 host) —
+    // resize them now that the layout has real dimensions.
+    resizeCharts();
+    const overlay = document.getElementById("loading-overlay");
+    overlay.classList.add("hidden");
+    setTimeout(() => overlay.remove(), 400);
+}
+
+// ── Wire up the dashboard once the CSV has loaded ──
+function initDashboard(data, headers) {
+    globalThis._allData = data;
+    globalThis._allHeaders = headers;
+
+    initExport(data, headers);
+    initDataTable(data, headers);
+
+    const { minYear, maxYear } = _getYearBounds(data);
+    const hashState = parseHash();
+    const state = {
+        corpus: hashState.corpus || "all",
+        yearRange: (hashState.yearMin && hashState.yearMax) ? [hashState.yearMin, hashState.yearMax] : [minYear, maxYear],
+    };
+
+    if (hashState.corpus) {
+        document.querySelectorAll("#corpusToggle .corpus-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.corpus === state.corpus);
+        });
+    }
+
+    // Sync active filter state so _buildExportFilename is always accurate.
+    globalThis._activeFilters = { corpus: state.corpus, yearRange: state.yearRange };
+    globalThis._rerenderAllCharts = () => _rerenderCharts(data, state);
+
+    const refresh = () => _refreshDashboard(data, state);
+    initYearSlider(state, minYear, maxYear, refresh);
+    initCorpusToggle(state, refresh);
+    initChartSelector(data, state, hashState);
+    initAbstractSearchInput();
+
+    initColumnVisibility(headers);
+    initExportFiltered();
+    initBulkBibtex();
+    initCardCollapse();
+    initActiveFilterChips();
+    renderSparklines(data);
+
+    // ── Render initial charts + reveal content ──
+    const initialFiltered = applyFilters(data, state.corpus, state.yearRange);
+    renderBubbleDashboard(initialFiltered);
+    updateStatsAnimated(initialFiltered);
+    updateSummaryStats(initialFiltered);
+
+    _revealDashboard();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    // Populate the insights chart selector from CHART_REGISTRY before use.
+    if (typeof buildChartSelect === "function") buildChartSelect();
+
+    initDialogs(); // native <dialog> close/backdrop wiring (ui.js)
+    initCitation();
+    initCopyBibtex();
+    initDarkModeToggle();
+    initBackToTop();
+    initMiniNav();
+    initChartDownloads();
+    initKeyboardShortcuts();
+
+    loadCSV(initDashboard);
 });
 
 // ── Animated stat counters ──
@@ -282,10 +307,7 @@ function animateValue(el, newVal) {
     const timer = setInterval(() => {
         step++;
         el.textContent = Math.round(current + (diff * step) / steps);
-        if (step >= steps) {
-            el.textContent = newVal;
-            clearInterval(timer);
-        }
+        if (step >= steps) { el.textContent = newVal; clearInterval(timer); }
     }, stepTime);
 }
 
@@ -309,8 +331,8 @@ function updateSummaryStats(data) {
     const years = {};
     data.forEach((r) => { if (r.YEAR) years[r.YEAR] = (years[r.YEAR] || 0) + 1; });
     const yearKeys = Object.keys(years);
-    const avg = yearKeys.length > 0 ? (data.length / yearKeys.length).toFixed(1) : "-";
-    document.getElementById("summary-avg-year").textContent = avg;
+    document.getElementById("summary-avg-year").textContent =
+        yearKeys.length > 0 ? (data.length / yearKeys.length).toFixed(1) : "-";
 
     // Peak year
     let peakYear = "-", peakCount = 0;
@@ -351,98 +373,47 @@ function updateSummaryStats(data) {
 function initColumnVisibility(headers) {
     const btn = document.getElementById("colVisBtn");
     const dropdown = document.getElementById("colVisDropdown");
-    if (!btn || !dropdown || !dataTableInstance) return;
+    if (!btn || !dropdown || !tabulator) return;
 
     const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const columns = dataTableInstance.columns().indexes().toArray();
-    const visHeaders = headers.filter((h) => !hiddenSet.has(h));
-
-    columns.forEach((ci) => {
-        const name = visHeaders[ci] || "Col " + ci;
+    headers.filter((h) => !hiddenSet.has(h)).forEach((field) => {
         const label = document.createElement("label");
         label.className = "col-vis-item";
         const cb = document.createElement("input");
         cb.type = "checkbox";
-        cb.checked = dataTableInstance.column(ci).visible();
+        cb.checked = true;
         const span = document.createElement("span");
-        span.textContent = name;
+        span.textContent = field;
         label.appendChild(cb);
         label.appendChild(span);
         dropdown.appendChild(label);
         cb.addEventListener("change", () => {
-            dataTableInstance.column(ci).visible(cb.checked);
+            const col = tabulator.getColumn(field);
+            if (col) col.toggle();
         });
     });
 
-    btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        dropdown.classList.toggle("active");
-    });
+    btn.addEventListener("click", (e) => { e.stopPropagation(); dropdown.classList.toggle("active"); });
     document.addEventListener("click", () => dropdown.classList.remove("active"));
     dropdown.addEventListener("click", (e) => e.stopPropagation());
 }
 
 // ── Export filtered data ──
-function initExportFiltered(data, headers) {
+function initExportFiltered() {
     const btn = document.getElementById("exportFiltered");
-    if (!btn || !dataTableInstance) return;
-
+    if (!btn) return;
+    // Tabulator exports the filtered ("active") row objects as raw values.
     btn.addEventListener("click", () => {
-        const filteredIdxs = dataTableInstance.rows({ search: "applied" }).indexes().toArray();
-        const visHeaders = dataTableInstance.columns().header().toArray().map((th) => th.textContent.trim());
-        const visCols = dataTableInstance.columns().indexes().toArray().filter((ci) => dataTableInstance.column(ci).visible());
-
-        const headerRow = visCols.map((ci) => visHeaders[ci]);
-        const rows = filteredIdxs.map((ri) => {
-            const rowData = dataTableInstance.row(ri).data();
-            return visCols.map((ci) => {
-                const val = rowData[ci] || "";
-                const tmp = document.createElement("div");
-                tmp.innerHTML = val;
-                return tmp.textContent || tmp.innerText || "";
-            });
-        });
-
-        const csvContent = [headerRow, ...rows]
-            .map((r) => r.map((c) => '"' + String(c).replaceAll('"', '""') + '"').join(","))
-            .join("\n");
-
-        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "articlecorpus_filtered.csv";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (tabulator) tabulator.download("csv", "articlecorpus_filtered.csv", {}, "active");
     });
-}
-
-// ── Table row click → open INFO modal ──
-function initRowClick() {
-    if (!dataTableInstance) return;
-    $("#tabla tbody").on("click", "tr", function (e) {
-        // Don't trigger if clicking a link/button
-        if (e.target.closest("a, button, .chip-more")) return;
-        const infoBtn = this.querySelector(".green-btn[data-abstract]");
-        if (infoBtn) showAbstractFromAttr(infoBtn);
-    });
-    // Add cursor pointer to rows
-    const style = document.createElement("style");
-    style.textContent = "#tabla tbody tr { cursor: pointer; }";
-    document.head.appendChild(style);
 }
 
 // ── Shareable URL hash ──
 function updateHash(corpus, yearRange, chart) {
     const params = new URLSearchParams();
     if (corpus && corpus !== "all") params.set("corpus", corpus);
-    if (yearRange) {
-        params.set("ymin", yearRange[0]);
-        params.set("ymax", yearRange[1]);
-    }
-    if (chart && chart !== "ano") params.set("chart", chart);
+    if (yearRange) { params.set("ymin", yearRange[0]); params.set("ymax", yearRange[1]); }
+    if (chart && chart !== globalThis.DEFAULT_CHART_KEY) params.set("chart", chart);
     const hash = params.toString();
     history.replaceState(null, "", hash ? "#" + hash : location.pathname);
 }
@@ -467,70 +438,57 @@ function initCardCollapse() {
             const isCollapsed = collapsible.classList.toggle("collapsed");
             btn.classList.toggle("collapsed", isCollapsed);
             btn.title = isCollapsed ? "Expand" : "Collapse";
+            // ECharts inits at 0×0 inside a collapsed card — fix sizes on expand.
+            if (!isCollapsed && typeof resizeCharts === "function") resizeCharts();
         });
     });
 }
 
-// ── Table sort persistence ──
-function initSortPersistence() {
-    if (!dataTableInstance) return;
-    const saved = localStorage.getItem("tableSortOrder");
-    if (saved) {
-        try {
-            const [col, dir] = JSON.parse(saved);
-            dataTableInstance.order([col, dir]).draw();
-        } catch { /* ignore parse errors */ }
-    }
-    dataTableInstance.on("order.dt", function () {
-        const order = dataTableInstance.order();
-        if (order.length) localStorage.setItem("tableSortOrder", JSON.stringify(order[0]));
-    });
+// ── Active filter chips ──
+// Builds a chip as real DOM nodes (rather than innerHTML + template literals)
+// so that user-supplied search text and column values can never be
+// interpreted as markup.
+function _makeFilterChip(label, value, removeData) {
+    const chip = document.createElement("span");
+    chip.className = "active-filter-chip";
+
+    const b = document.createElement("b");
+    b.textContent = label + ":";
+    chip.append(b, " " + value + " ");
+
+    const remove = document.createElement("span");
+    remove.className = "chip-remove";
+    Object.entries(removeData).forEach(([key, val]) => { remove.dataset[key] = val; });
+    remove.textContent = "×";
+    chip.appendChild(remove);
+
+    return chip;
 }
 
-// ── Active filter chips ──
-function initActiveFilterChips(headers) {
-    if (!dataTableInstance) return;
+function initActiveFilterChips() {
     const container = document.getElementById("activeFilterChips");
-    if (!container) return;
-
-    const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const visHeaders = headers.filter((h) => !hiddenSet.has(h));
+    if (!container || !tabulator) return;
 
     function renderChips() {
         container.innerHTML = "";
         let hasChips = false;
 
-        // Column filters
-        for (const [ci, selected] of Object.entries(columnFilters)) {
+        for (const [field, selected] of Object.entries(columnFilters)) {
             if (!selected || selected.size === 0) continue;
-            const colName = visHeaders[ci];
             selected.forEach((val) => {
                 hasChips = true;
-                const chip = document.createElement("span");
-                chip.className = "active-filter-chip";
-                chip.innerHTML = `<b>${colName}:</b> ${val} <span class="chip-remove" data-col="${ci}" data-val="${val}">&times;</span>`;
-                container.appendChild(chip);
+                container.appendChild(_makeFilterChip(field, val, { field, val }));
             });
         }
 
-        // Global search
-        const searchVal = dataTableInstance.search();
-        if (searchVal) {
+        if (_globalQuery.length > 0) {
             hasChips = true;
-            const chip = document.createElement("span");
-            chip.className = "active-filter-chip";
-            chip.innerHTML = `<b>Search:</b> ${searchVal} <span class="chip-remove" data-type="search">&times;</span>`;
-            container.appendChild(chip);
+            container.appendChild(_makeFilterChip("Search", _globalQuery.join(" + "), { type: "search" }));
         }
 
-        // Abstract search
-        const absInput = document.getElementById("abstractSearch");
-        if (absInput?.value.trim()) {
+        if (_abstractQuery) {
             hasChips = true;
-            const chip = document.createElement("span");
-            chip.className = "active-filter-chip";
-            chip.innerHTML = `<b>Abstract:</b> ${absInput.value.trim()} <span class="chip-remove" data-type="abstract">&times;</span>`;
-            container.appendChild(chip);
+            container.appendChild(_makeFilterChip("Abstract", _abstractQuery, { type: "abstract" }));
         }
 
         container.style.display = hasChips ? "" : "none";
@@ -541,44 +499,37 @@ function initActiveFilterChips(headers) {
         if (!remove) return;
         const type = remove.dataset.type;
         if (type === "search") {
-            dataTableInstance.search("").draw();
-            const searchInput = document.querySelector(".dataTables_filter input");
-            if (searchInput) searchInput.value = "";
+            globalThis._setGlobalTableSearch("");
         } else if (type === "abstract") {
             const absInput = document.getElementById("abstractSearch");
             if (absInput) absInput.value = "";
-            dataTableInstance.draw();
+            globalThis._setAbstractQuery("");
         } else {
-            const ci = remove.dataset.col;
+            const field = remove.dataset.field;
             const val = remove.dataset.val;
-            if (columnFilters[ci]) {
-                columnFilters[ci].delete(val);
-                if (columnFilters[ci].size === 0) delete columnFilters[ci];
-                // Update checkbox UI
-                const escaped = val.replaceAll('"', '\\"');
-                $(`.col-filter-list input[value="${escaped}"]`).prop("checked", false);
+            if (columnFilters[field]) {
+                columnFilters[field].delete(val);
+                if (columnFilters[field].size === 0) delete columnFilters[field];
             }
-            dataTableInstance.draw();
+            updateFilterBadge();
+            if (tabulator) tabulator.refreshFilter();
         }
         renderChips();
     });
 
-    dataTableInstance.on("draw.dt", renderChips);
+    tabulator.on("dataFiltered", renderChips);
     renderChips();
 }
 
 // ── Bulk BibTeX export ──
-function initBulkBibtex(data, headers) {
+function initBulkBibtex() {
     const btn = document.getElementById("exportBibtex");
-    if (!btn || !dataTableInstance) return;
-    const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const visHeaders = headers.filter((h) => !hiddenSet.has(h));
-    const bibIdx = visHeaders.indexOf("BIBTEX");
-
+    if (!btn) return;
     btn.addEventListener("click", () => {
-        const rows = dataTableInstance.rows({ search: "applied" }).data().toArray();
-        const bibtexAll = rows.map((r) => r[bibIdx] || "").filter(Boolean).join("\n\n");
-        if (!bibtexAll) { M.toast({ html: "No BibTeX entries found", classes: "red" }); return; }
+        if (!tabulator) return;
+        const rows = tabulator.getData("active");
+        const bibtexAll = rows.map((r) => r.BIBTEX || "").filter(Boolean).join("\n\n");
+        if (!bibtexAll) { toast("No BibTeX entries found"); return; }
         const blob = new Blob([bibtexAll], { type: "text/plain;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -588,80 +539,8 @@ function initBulkBibtex(data, headers) {
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        M.toast({ html: `Exported ${rows.length} BibTeX entries`, classes: "teal" });
+        toast(`Exported ${rows.length} BibTeX entries`);
     });
-}
-
-// ── Reading list / bookmarks ──
-function initReadingList(data, headers) {
-    const RL_KEY = "readingList";
-    const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const visHeaders = headers.filter((h) => !hiddenSet.has(h));
-    const titleIdx = visHeaders.indexOf("TITLE");
-
-    let readingList = new Set(JSON.parse(localStorage.getItem(RL_KEY) || "[]"));
-
-    function save() {
-        localStorage.setItem(RL_KEY, JSON.stringify([...readingList]));
-        updateBadge();
-    }
-
-    function updateBadge() {
-        const badge = document.getElementById("readingListCount");
-        if (badge) {
-            badge.textContent = readingList.size;
-            badge.style.display = readingList.size > 0 ? "" : "none";
-        }
-    }
-
-    // Update star states after draw
-    function updateStars() {
-        document.querySelectorAll("#tabla .star-btn").forEach((btn) => {
-            btn.classList.toggle("starred", readingList.has(btn.dataset.title));
-            btn.textContent = readingList.has(btn.dataset.title) ? "\u2605" : "\u2606";
-        });
-    }
-
-    // Add star column
-    if (dataTableInstance) {
-        // Add star as first column via columnDefs createdCell
-        dataTableInstance.on("draw.dt", updateStars);
-    }
-
-    // Delegate star click
-    $("#tabla tbody").on("click", ".star-btn", function (e) {
-        e.stopPropagation();
-        const title = this.dataset.title;
-        if (readingList.has(title)) readingList.delete(title);
-        else readingList.add(title);
-        save();
-        updateStars();
-    });
-
-    // Show reading list button
-    const showBtn = document.getElementById("showReadingList");
-    let rlFilterActive = false;
-    if (showBtn) {
-        showBtn.addEventListener("click", () => {
-            rlFilterActive = !rlFilterActive;
-            showBtn.classList.toggle("active-rl", rlFilterActive);
-            dataTableInstance.draw();
-        });
-    }
-
-    // Custom filter for reading list
-    $.fn.dataTable.ext.search.push((settings, searchData) => {
-        if (settings.nTable.id !== "tabla") return true;
-        if (!rlFilterActive) return true;
-        const title = searchData[titleIdx] || "";
-        return readingList.has(title.trim());
-    });
-
-    updateBadge();
-
-    // Expose for title tooltip render
-    globalThis._readingList = readingList;
-    globalThis._readingListSave = save;
 }
 
 // ── Sparklines ──
@@ -680,7 +559,7 @@ function renderSparklines(data) {
         const ctx = canvas.getContext("2d");
         const w = canvas.width, h = canvas.height;
         ctx.clearRect(0, 0, w, h);
-        ctx.strokeStyle = "#00796b";
+        ctx.strokeStyle = _C.DEEP_BLUE;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         vals.forEach((v, i) => {
@@ -691,11 +570,10 @@ function renderSparklines(data) {
         });
         ctx.stroke();
 
-        // Dot for max
         const maxIdx = vals.indexOf(max);
         const mx = (maxIdx / (vals.length - 1)) * w;
         const my = h - (h - 4) - 2;
-        ctx.fillStyle = "#e65100";
+        ctx.fillStyle = _C.BURNT_ORANGE;
         ctx.beginPath();
         ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
         ctx.fill();
@@ -703,95 +581,4 @@ function renderSparklines(data) {
 
     drawSparkline("spark-avg-year");
     drawSparkline("spark-peak-year");
-}
-
-// ── Mobile card view ──
-function initMobileCardView(headers) {
-    if (window.innerWidth > 600) return;
-    const hiddenSet = new Set(["KEY", "DATABASE"]);
-    const visHeaders = headers.filter((h) => !hiddenSet.has(h));
-    const wrapper = document.querySelector(".dataTables_wrapper");
-    if (wrapper) wrapper.classList.add("mobile-card-view");
-
-    if (dataTableInstance) {
-        dataTableInstance.on("draw.dt", () => {
-            document.querySelectorAll("#tabla tbody td").forEach((td) => {
-                const ci = td.cellIndex;
-                if (ci >= 0 && ci < visHeaders.length) {
-                    td.dataset.label = visHeaders[ci];
-                }
-            });
-        });
-    }
-}
-
-// ── Search highlighting (outer scope so linter sees it as a named function) ──
-function highlightCells() {
-    document.querySelectorAll("#tabla .search-highlight").forEach((el) => {
-        const parent = el.parentNode;
-        parent.replaceChild(document.createTextNode(el.textContent), el);
-        parent.normalize();
-    });
-
-    const query = dataTableInstance.search().toLowerCase();
-    const absQuery = (document.getElementById("abstractSearch")?.value || "").trim().toLowerCase();
-    const combined = query || absQuery;
-    if (!combined) return;
-
-    document.querySelectorAll("#tabla tbody td").forEach((td) => {
-        if (td.querySelector("a.green-btn, .star-btn, .title-tooltip")) return;
-        const targets = td.querySelectorAll(".table-chip");
-        const nodes = targets.length > 0 ? [...targets] : [td];
-
-        nodes.forEach((node) => {
-            if (node !== td && node.querySelector?.("a, button")) return;
-            const html = node.innerHTML;
-            const lower = html.toLowerCase();
-            const idx = lower.indexOf(combined);
-            if (idx === -1) return;
-            const before = html.substring(0, idx);
-            if ((before.match(/</g) || []).length !== (before.match(/>/g) || []).length) return;
-            node.innerHTML = html.substring(0, idx) +
-                '<span class="search-highlight">' + html.substring(idx, idx + combined.length) + "</span>" +
-                html.substring(idx + combined.length);
-        });
-    });
-}
-
-function initSearchHighlight() {
-    if (!dataTableInstance) return;
-    dataTableInstance.on("draw.dt", highlightCells);
-}
-
-// ── Tooltip abstract preview ──
-function initTitleTooltips(data, headers) {
-    if (!dataTableInstance) return;
-
-    // Build a map of title → abstract directly from data keys
-    const abstractMap = {};
-    data.forEach((r) => {
-        if (r.TITLE && r.ABSTRACT) abstractMap[r.TITLE.trim()] = r.ABSTRACT.trim();
-    });
-
-    document.getElementById("tabla").addEventListener("mouseover", (e) => {
-        const td = e.target.closest("td.dt-title");
-        if (!td || td.querySelector(".title-tooltip")) return;
-
-        const link = td.querySelector("a[href]");
-        const titleText = (link ? link.textContent : td.textContent).trim();
-        const abstract = abstractMap[titleText];
-        if (!abstract) return;
-
-        const preview = abstract.length > 200 ? abstract.substring(0, 200) + "..." : abstract;
-        const tooltip = document.createElement("div");
-        tooltip.className = "title-tooltip";
-        tooltip.textContent = preview;
-        td.appendChild(tooltip);
-    });
-
-    document.getElementById("tabla").addEventListener("mouseout", (e) => {
-        const td = e.target.closest("td.dt-title");
-        if (!td) return;
-        td.querySelector(".title-tooltip")?.remove();
-    });
 }
