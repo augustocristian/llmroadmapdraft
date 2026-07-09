@@ -35,6 +35,12 @@
 }
 
 /* ── Base ── */
+/* Root size drives every `rem` value in this file (67+ of them) — a single,
+   fluid readability lever instead of retuning each rule individually. Scales
+   from 16px (phone) up to 19px (ultrawide), capped both ends. */
+html {
+    font-size: clamp(16px, 15px + 0.25vw, 19px);
+}
 body {
     margin: 0;
     font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -66,6 +72,7 @@ a { color: var(--brand-primary); }
     border-radius: 12px;
 }
 .container {
+    box-sizing: border-box;
     width: 100%;
     margin: 0;
     padding: 0 24px;
@@ -252,22 +259,10 @@ a { color: var(--brand-primary); }
 .acks-block p {
     margin: 6px 0 12px;
 }
-.acks-toggle-link {
-    font-size: 0.8rem;
-    color: var(--brand-primary);
-    text-decoration: none;
-    font-weight: 500;
-}
-.acks-toggle-link:hover {
-    text-decoration: underline;
-}
-.acks-content {
-    transition: max-height .3s ease;
-}
-
 /* ── Mini navigation ── */
 .mini-nav {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 4px;
     padding: 8px 0;
@@ -289,6 +284,8 @@ a { color: var(--brand-primary); }
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    white-space: nowrap;
     transition: background .15s, color .15s;
 }
 .mini-nav-link:hover {
@@ -372,6 +369,19 @@ a { color: var(--brand-primary); }
 .noUi-horizontal .noUi-handle::before,
 .noUi-horizontal .noUi-handle::after {
     display: none !important;
+}
+/* Touch targets: 18×18px is under the ~44-48px minimum recommended for
+   coarse-pointer (touch) input — enlarge the handle/track on such devices. */
+@media (pointer: coarse) {
+    .noUi-horizontal {
+        height: 8px !important;
+    }
+    .noUi-horizontal .noUi-handle {
+        width: 28px !important;
+        height: 28px !important;
+        top: -11px !important;
+        right: -14px !important;
+    }
 }
 
 /* Corpus toggle button group */
@@ -484,6 +494,31 @@ a { color: var(--brand-primary); }
     height: clamp(320px, calc(100vh - 160px), 560px);
 }
 
+/* Large/ultrawide monitors: a fixed 520/560px cap leaves charts looking flat
+   and small against all the extra horizontal room — give them more height
+   too so bubbles/bars/labels scale up proportionately (renderBubbleChart in
+   charts.js also scales its own font/marker sizes past this same width). */
+@media (min-width: 1600px) {
+    .chart-container-lg {
+        height: 640px;
+    }
+    #section-insights .chart-container-lg {
+        height: clamp(320px, calc(100vh - 160px), 680px);
+    }
+}
+
+/* Sankey (dim_flow) on compact tiers: 6 flow stages are too dense to compress
+   losslessly, so let the chart render at a legible fixed width and scroll
+   horizontally instead — toggled by renderSankeyChart (charts.js). */
+.chart-container-lg.chart-scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.chart-scroll-x .chart-host {
+    min-width: 640px;
+    height: 100%;
+}
+
 /* ── Empty state (shown when filters yield no rows) ── */
 .chart-empty {
     position: absolute;
@@ -567,26 +602,30 @@ a { color: var(--brand-primary); }
     position: relative;
     display: inline-block;
 }
-.col-vis-dropdown {
+/* Shared chrome with .col-filter-dropdown (dashboard/css/styles.css ~1210) —
+   both are Excel-style checkbox dropdowns; only sizing/z-index differ. */
+.col-vis-dropdown,
+.col-filter-dropdown {
     display: none;
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 1000;
-    min-width: 200px;
-    max-height: 320px;
-    overflow-y: auto;
+    position: fixed;
     background: #fff;
     border: 1px solid #ccc;
     border-radius: 6px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.15);
     padding: 6px 0;
-    margin-top: 2px;
 }
-.col-vis-dropdown.active {
+.col-vis-dropdown {
+    z-index: 1000;
+    min-width: 200px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.col-vis-dropdown.active,
+.col-filter-dropdown.active {
     display: block;
 }
-.col-vis-item {
+.col-vis-item,
+.col-filter-item {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -596,10 +635,12 @@ a { color: var(--brand-primary); }
     cursor: pointer;
     white-space: nowrap;
 }
-.col-vis-item:hover {
+.col-vis-item:hover,
+.col-filter-item:hover {
     background: #f5f5f5;
 }
-.col-vis-item input[type="checkbox"] {
+.col-vis-item input[type="checkbox"],
+.col-filter-item input[type="checkbox"] {
     width: 14px;
     height: 14px;
     margin: 0;
@@ -612,6 +653,14 @@ a { color: var(--brand-primary); }
     border-radius: var(--radius-sm);
     background: var(--surface-card);
     font-size: 0.88rem;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+/* Explicit safety net: don't depend implicitly on Tabulator's bundled CSS
+   default for horizontal scroll when the table (layout:"fitData") is wider
+   than its container, e.g. on a phone with many columns visible. */
+#tabla .tabulator-tableholder {
+    overflow-x: auto;
 }
 #tabla .tabulator-header {
     background: var(--surface-muted);
@@ -829,15 +878,6 @@ a { color: var(--brand-primary); }
     margin-left: 6px;
 }
 
-/* ── Venue chart legend (responsive) ── */
-.venue-legend {
-    min-width: 130px;
-    max-height: 500px;
-    overflow-y: auto;
-    padding-left: 10px;
-    flex-shrink: 0;
-}
-
 /* ── Skip navigation (accessibility) ── */
 .skip-nav {
     position: absolute;
@@ -929,38 +969,6 @@ a { color: var(--brand-primary); }
     opacity: 1;
 }
 
-/* ── Tooltip abstract preview ── */
-.title-tooltip {
-    display: none;
-    position: absolute;
-    z-index: 500;
-    bottom: 100%;
-    left: 0;
-    width: 320px;
-    max-height: 120px;
-    overflow: hidden;
-    padding: 8px 12px;
-    font-size: 0.78rem;
-    line-height: 1.45;
-    color: #333;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    pointer-events: none;
-}
-#tabla .tabulator-cell.dt-title:hover .title-tooltip {
-    display: block;
-}
-
-/* ── Search highlighting ── */
-.search-highlight {
-    background: #fff59d;
-    color: #333;
-    border-radius: 2px;
-    padding: 0 1px;
-}
-
 /* ── Sparklines ── */
 .sparkline {
     display: block;
@@ -1015,7 +1023,7 @@ a { color: var(--brand-primary); }
     font-weight: 700;
     color: var(--brand-primary);
     line-height: 1.3;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 .summary-label {
     display: block;
@@ -1131,6 +1139,23 @@ a { color: var(--brand-primary); }
     vertical-align: middle;
     margin-right: 6px;
 }
+.coauthor-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+}
+.coauthor-pager-label {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    min-width: 90px;
+    text-align: center;
+}
+.coauthor-pager .btn-flat:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
 
 /* ── Theme toggle (fixed top-right icon button) ── */
 .theme-toggle-btn {
@@ -1192,19 +1217,9 @@ body.dark-mode .theme-toggle-btn .icon-sun  { display: block; color: #9e9e9e; }
     border-color: var(--brand-primary);
 }
 .col-filter-dropdown {
-    display: none;
-    position: fixed;
     z-index: 9500;
     min-width: 180px;
     max-width: 260px;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    padding: 6px 0;
-}
-.col-filter-dropdown.active {
-    display: block;
 }
 .col-filter-controls {
     display: flex;
@@ -1242,25 +1257,8 @@ body.dark-mode .theme-toggle-btn .icon-sun  { display: block; color: #9e9e9e; }
     padding: 4px 0;
 }
 .col-filter-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 10px;
-    font-size: 0.78rem;
-    color: #333;
-    cursor: pointer;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.col-filter-item:hover {
-    background: #f5f5f5;
-}
-.col-filter-item input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-    flex-shrink: 0;
 }
 .col-filter-item span {
     overflow: hidden;
@@ -1281,12 +1279,6 @@ body.dark-mode .theme-toggle-btn .icon-sun  { display: block; color: #9e9e9e; }
     border-radius: 8px;
     margin-left: 4px;
     vertical-align: middle;
-}
-
-/* ── BibTeX cell buttons ── */
-.bib-btn-group {
-    display: inline-flex;
-    gap: 4px;
 }
 
 /* ── Dialogs (native <dialog>) ── */
@@ -1396,6 +1388,11 @@ dialog[open] {
 /* ── Insights header (title + export | chart selector) ── */
 .insights-header {
     flex: 1;
+    /* A flex item's default min-width:auto floor is its content's min-content
+       size — without this override that floor wins over flex-wrap, keeping
+       .chart-header-row and .chart-select-wrap on one (too-wide) line
+       instead of letting this item shrink and wrap them onto two. */
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1411,16 +1408,30 @@ dialog[open] {
     align-items: center;
     gap: var(--space-2);
     flex: 1;
-    min-width: 240px;
+    min-width: 0;
     max-width: 520px;
 }
 .chart-select-label {
     font-size: 0.82rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--brand-primary);
+    flex-shrink: 0;
 }
 .chart-select {
     flex: 1;
+    /* Flex items default to a min-content floor (min-width:auto) — for a
+       <select> that's its LONGEST <option> text (e.g. a full Sankey label),
+       which forced this control to ~440px wide regardless of viewport. A
+       small explicit floor (rather than 0) lets it shrink to fit narrow
+       rows while keeping the selected label legible instead of crushing
+       down to just the dropdown arrow; the label's flex-shrink:0 means all
+       shrink pressure falls on this control alone, so going all the way to
+       0 was the over-correction — .insights-header's own flex-wrap now
+       pushes this whole control to its own line once this floor is hit,
+       same as it would for any other min-content-driven wrap. The closed
+       control truncates its own text natively; the open dropdown list is
+       unaffected either way. */
+    min-width: 90px;
     height: 34px;
     padding: 0 32px 0 10px;
     font-size: 0.88rem;
@@ -1434,6 +1445,9 @@ dialog[open] {
     background-repeat: no-repeat;
     background-position: right 10px center;
     cursor: pointer;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
 }
 .chart-select:focus {
     outline: none;
@@ -1454,10 +1468,6 @@ dialog[open] {
     .year-filter-group {
         max-width: 300px;
     }
-    .venue-legend {
-        min-width: 100px;
-        font-size: 9px;
-    }
     .chart-container-lg {
         height: 460px;
     }
@@ -1471,8 +1481,6 @@ dialog[open] {
     .table-toolbar-right {
         justify-content: flex-start;
         width: 100%;
-        overflow-x: auto;
-        padding-bottom: 4px;
     }
     .abstract-search-input {
         flex: 1 1 100%;
@@ -1532,18 +1540,26 @@ dialog[open] {
     .chart-container-lg {
         height: 400px;
     }
-    .venue-legend {
-        display: none;
-    }
     .mini-nav {
         gap: 2px;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .mini-nav::-webkit-scrollbar {
+        display: none;
     }
     .mini-nav-link {
         padding: 5px 12px;
         font-size: 0.82rem;
     }
-    .abstract-search-input {
-        width: 120px;
+    .dialog-body {
+        padding: var(--space-4);
+    }
+    .dialog-actions {
+        padding: var(--space-2) var(--space-3);
     }
 }
 
@@ -1610,9 +1626,6 @@ body.dark-mode .affil-link:hover {
 body.dark-mode .affiliations-block,
 body.dark-mode .acks-block {
     color: #aaa;
-}
-body.dark-mode .acks-toggle-link {
-    color: var(--brand-dark-text);
 }
 body.dark-mode .divider {
     background-color: #333 !important;
@@ -1828,9 +1841,6 @@ body.dark-mode #loading-overlay {
 body.dark-mode #loading-overlay p {
     color: var(--brand-dark-text);
 }
-body.dark-mode .venue-legend div {
-    color: #ddd;
-}
 body.dark-mode .action-group-label {
     color: #b0b0b0;
 }
@@ -1897,15 +1907,6 @@ body.dark-mode .active-filter-chip {
 body.dark-mode .active-filter-chip .chip-remove {
     color: #80cbc4;
 }
-body.dark-mode .title-tooltip {
-    background: #242424;
-    color: #ddd;
-    border-color: #444;
-}
-body.dark-mode .search-highlight {
-    background: #f9a825;
-    color: #000;
-}
 body.dark-mode .toast {
     background: #2e2e2e;
     color: #e0e0e0;
@@ -1933,7 +1934,6 @@ body.dark-mode .fab:hover {
     .theme-toggle-btn,
     .mini-nav,
     .header-actions,
-    .acks-toggle-link,
     .table-toolbar-right,
     .chart-download-btn,
     .filter-bar,
@@ -1959,8 +1959,5 @@ body.dark-mode .fab:hover {
     #tabla .tabulator-cell {
         font-size: 0.7rem !important;
         padding: 4px 6px !important;
-    }
-    .acks-content {
-        display: block !important;
     }
 }

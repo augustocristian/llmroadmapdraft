@@ -165,6 +165,10 @@ function _htmlWordCloud(cid, data) {
     el.innerHTML = html;
 }
 
+// Paginated instead of one long scrolling list — keeps the chart container's
+// height predictable and avoids a tall inner scrollbar for 30 rows.
+const _COAUTHOR_PAGE_SIZE = 14;
+
 function _htmlCoauthorTable(cid, data) {
     const el = document.getElementById(cid);
     const pairs = {};
@@ -182,23 +186,55 @@ function _htmlCoauthorTable(cid, data) {
     });
     const sorted = Object.entries(pairs).sort((a, b) => b[1] - a[1]).slice(0, 30);
     const maxP = sorted[0]?.[1] || 1;
+    const maxBarPx = _screenTier() === "lg" ? 200 : 100;
+    const totalPages = Math.max(1, Math.ceil(sorted.length / _COAUTHOR_PAGE_SIZE));
+    let page = 0;
 
-    let html = '<table class="coauthor-table"><thead><tr><th>Author Pair</th><th>Co-authored Papers</th></tr></thead><tbody>';
-    sorted.forEach(([pair, count]) => {
-        const w = Math.round((count / maxP) * 200);
-        html += `<tr class="coauthor-row" data-pair="${encodeURIComponent(pair)}" style="cursor:pointer;" title="Show this pair's papers in the table">` +
-            `<td>${pair}</td><td><span class="coauthor-bar" style="width:${w}px;"></span>${count}</td></tr>`;
-    });
-    html += "</tbody></table>";
-    el.innerHTML = html;
+    el.innerHTML = "";
+    const tableWrap = document.createElement("div");
+    tableWrap.style.overflowX = "auto";
+    const pager = document.createElement("div");
+    pager.className = "coauthor-pager";
+    const prevBtn = document.createElement("button");
+    prevBtn.className = "btn-flat";
+    prevBtn.textContent = "‹ Prev";
+    const pageLabel = document.createElement("span");
+    pageLabel.className = "coauthor-pager-label";
+    const nextBtn = document.createElement("button");
+    nextBtn.className = "btn-flat";
+    nextBtn.textContent = "Next ›";
+    pager.append(prevBtn, pageLabel, nextBtn);
+    el.append(tableWrap, pager);
 
-    // Clicking a pair filters the table to papers co-authored by BOTH authors.
-    el.querySelectorAll(".coauthor-row").forEach((tr) => {
-        tr.addEventListener("click", () => {
-            const authors = decodeURIComponent(tr.dataset.pair).split(" & ");
-            chartClickFilter("", authors);
+    function renderPage() {
+        const start = page * _COAUTHOR_PAGE_SIZE;
+        const pageRows = sorted.slice(start, start + _COAUTHOR_PAGE_SIZE);
+
+        let html = '<table class="coauthor-table"><thead><tr><th>Author Pair</th><th>Co-authored Papers</th></tr></thead><tbody>';
+        pageRows.forEach(([pair, count]) => {
+            const w = Math.round((count / maxP) * maxBarPx);
+            html += `<tr class="coauthor-row" data-pair="${encodeURIComponent(pair)}" style="cursor:pointer;" title="Show this pair's papers in the table">` +
+                `<td>${pair}</td><td><span class="coauthor-bar" style="width:${w}px;"></span>${count}</td></tr>`;
         });
-    });
+        html += "</tbody></table>";
+        tableWrap.innerHTML = html;
+
+        // Clicking a pair filters the table to papers co-authored by BOTH authors.
+        tableWrap.querySelectorAll(".coauthor-row").forEach((tr) => {
+            tr.addEventListener("click", () => {
+                const authors = decodeURIComponent(tr.dataset.pair).split(" & ");
+                chartClickFilter("", authors);
+            });
+        });
+
+        pageLabel.textContent = `Page ${page + 1} of ${totalPages}`;
+        prevBtn.disabled = page === 0;
+        nextBtn.disabled = page >= totalPages - 1;
+    }
+
+    prevBtn.addEventListener("click", () => { if (page > 0) { page--; renderPage(); } });
+    nextBtn.addEventListener("click", () => { if (page < totalPages - 1) { page++; renderPage(); } });
+    renderPage();
 }
 
 // Interactive tool cloud: font size ∝ number of papers proposing the tool,
@@ -520,12 +556,17 @@ globalThis.CHART_REGISTRY = {
                     }
                 }
             });
-            const full = (shortLabel) => TREND_ORDER[TREND_SHORT.indexOf(shortLabel)];
-            renderCrossHeatmap(cid, TREND_SHORT, TREND_SHORT,
-                (row, col) => matrix[full(row)]?.[full(col)] || 0,
+            // X-axis (rotated) always abbreviates, matching every other
+            // cross-tab heatmap's TREND column axis. Y-axis only abbreviates
+            // on phones — at md/lg there's plenty of horizontal room
+            // (containLabel) to show the full trend name.
+            const rowLabels = _screenTier() === "sm" ? TREND_SHORT : TREND_ORDER;
+            const resolveTrend = (label) => (TREND_ORDER.includes(label) ? label : TREND_ORDER[TREND_SHORT.indexOf(label)]);
+            renderCrossHeatmap(cid, rowLabels, TREND_SHORT,
+                (row, col) => matrix[resolveTrend(row)]?.[resolveTrend(col)] || 0,
                 {
                     xTitle: "Testing Trend", yTitle: "Testing Trend", paletteHex: _C.TEAL,
-                    clickTerms: (row, col) => [...new Set([full(row), full(col)])],
+                    clickTerms: (row, col) => [...new Set([resolveTrend(row), resolveTrend(col)])],
                 });
         },
     },

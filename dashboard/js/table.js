@@ -22,9 +22,18 @@ const NO_FILTER_COLS = new Set(["TITLE", "ABSTRACT", "BIBTEX"]);
 
 const HIDDEN_COLS = new Set(["KEY", "DATABASE"]);
 
+// On phones, start with only the essentials visible (title/year/venue + the
+// BibTeX/Abstract action buttons, which are how a cramped screen drills into
+// a row's full detail, including TREND etc., via the dialogs) — the rest
+// stays one tap away in the existing "Columns" dropdown, un-hidden here.
+const SM_DEFAULT_HIDDEN = new Set([
+    "ID", "PUBLICATION TYPE", "TYPE OF CONTRIBUTION", "TREND", "LLM ITERACTION",
+    "CONTEXTUAL INFO", "APPROACH", "SCOPE", "FOCUS", "BENCHMARK", "LLMs USED",
+    "EVALUATION METRIC", "TOOL",
+]);
+
 // ── Reading list (localStorage) ────────────────────────────────────────
 const readingList = new Set(JSON.parse(localStorage.getItem("readingList") || "[]"));
-globalThis._readingList = readingList;
 
 function _saveReadingList() {
     localStorage.setItem("readingList", JSON.stringify([...readingList]));
@@ -55,7 +64,8 @@ function _populateRelatedPapers(title, trends, relatedDiv, relatedList) {
         const rTitle = r.TITLE || "";
         const sharedTrends = (r.TREND || "").split(",").map((s) => s.trim()).filter((t) => paperTrends.includes(t));
         if (paperUrl) {
-            li.innerHTML = `<a href="${paperUrl}" target="_blank" style="color:#00796b;">${rTitle}</a>`;
+            const linkColor = brandTeal(document.body.classList.contains("dark-mode"));
+            li.innerHTML = `<a href="${paperUrl}" target="_blank" style="color:${linkColor};">${rTitle}</a>`;
         } else {
             li.textContent = rTitle;
         }
@@ -77,7 +87,8 @@ function showAbstract({ title, authors, venue, abstract, url, trends, conf, year
     const confUrl = (typeof _confUrls === "object" && _confUrls && conf && year)
         ? (_confUrls[conf + " " + year] || null) : null;
     if (confUrl) {
-        venueEl.innerHTML = `<a href="${confUrl}" target="_blank" rel="noopener" style="color:#00796b;font-weight:600;text-decoration:underline;">${venue}</a>`;
+        const linkColor = brandTeal(document.body.classList.contains("dark-mode"));
+        venueEl.innerHTML = `<a href="${confUrl}" target="_blank" rel="noopener" style="color:${linkColor};font-weight:600;text-decoration:underline;">${venue}</a>`;
     } else {
         venueEl.textContent = venue;
     }
@@ -463,6 +474,7 @@ function initDataTable(data, headers) {
         },
         ...visibleHeaders.map((h) => {
             const col = { title: h, field: h };
+            if (_screenTier() === "sm" && SM_DEFAULT_HIDDEN.has(h)) col.visible = false;
             if (!NO_FILTER_COLS.has(h)) col.titleFormatter = _filterTitleFormatter(h);
             if (chipCols.has(h)) {
                 col.formatter = chipFormatter(h);

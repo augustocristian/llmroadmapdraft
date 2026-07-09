@@ -30,10 +30,6 @@ function openDialog(id) {
     if (dlg && typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
 }
 
-function closeDialog(id) {
-    document.getElementById(id)?.close();
-}
-
 // Wire close buttons + backdrop light-dismiss for every <dialog> on the page.
 function initDialogs() {
     document.querySelectorAll("dialog").forEach((dlg) => {

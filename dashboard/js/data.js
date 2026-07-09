@@ -66,23 +66,42 @@ function countField(data, field, splitChar = ",", exclude = []) {
     return counts;
 }
 
-// ── Stats bar ──
-
-function updateStats(data) {
-    document.getElementById("stat-total").textContent = data.length;
-    let j = 0, c = 0, a = 0;
-    data.forEach((r) => {
-        const t = (r["PUBLICATION TYPE"] || "").trim();
-        if (t === "Journal") j++;
-        else if (t === "Conference") c++;
-        else if (t === "arXiv") a++;
-    });
-    document.getElementById("stat-journals").textContent = j;
-    document.getElementById("stat-conferences").textContent = c;
-    document.getElementById("stat-arxiv").textContent = a;
-}
-
 // ── Bubble chart: Classification Dimensions by Research Trend ──
+
+// Short group-header labels for compact tiers — "Domain Specific Knowledge"
+// cannot fit the ~60-140px band it gets once the canvas narrows. Mirrors the
+// TREND_SHORT_MAP convention in charts-registry.js.
+const _DIM_SHORT = {
+    "LLM Interaction": "LLM Int.",
+    "Domain Specific Knowledge": "Dom. Know.",
+};
+
+// Short TREND labels for the bubble overview's y-axis on compact tiers —
+// distinct wording from charts-registry.js's TREND_SHORT_MAP (tuned for this
+// chart specifically, not the cross-tab heatmaps). Only the axis TICK LABELS
+// use these; tooltips and click-filter terms always use the full TREND_ORDER
+// names (yLabels itself is left untouched).
+const _TREND_SHORT_BUBBLE = {
+    "Unit Test Generation": "Unit Gen.",
+    "High-Level Test Gen": "High L. Gen.",
+    "Oracle Derivation": "Oracle Deriv.",
+    "Reflections": "Reflections",
+    "Test Augmentation or Improvement": "Test Aug.",
+    "Test Configuration or Execution": "Test Conf.",
+};
+
+// Full TREND names, line-wrapped for the y-axis on large screens — plenty of
+// row height is available there (see .chart-container-lg's large-screen
+// bump in styles.css), so the full wording reads better split across lines
+// than crammed onto one. Tooltips/click-filter terms still use plain yLabels.
+const _TREND_WRAP_BUBBLE = {
+    "Unit Test Generation": "Unit Test\nGeneration",
+    "High-Level Test Gen": "High Level\nTest Gen",
+    "Oracle Derivation": "Oracle\nDerivation",
+    "Reflections": "Reflections",
+    "Test Augmentation or Improvement": "Test\nAugmentation\nor Improvement",
+    "Test Configuration or Execution": "Test\nConfiguration\nor Execution",
+};
 
 function renderBubbleDashboard(data) {
     const baseColors = generateColors(5);
@@ -95,6 +114,8 @@ function renderBubbleDashboard(data) {
     ];
 
     const yLabels = [...TREND_ORDER].reverse();
+    const yLabelsShort = yLabels.map((t) => _TREND_SHORT_BUBBLE[t] || t);
+    const yLabelsWrapped = yLabels.map((t) => _TREND_WRAP_BUBBLE[t] || t);
 
     // Build x-axis slots with gaps between dimension groups
     const xSlots = [];
@@ -107,7 +128,10 @@ function renderBubbleDashboard(data) {
             xSlots.push({ pos: xPos, label: val, dimIdx: di });
             xPos++;
         });
-        xGroups.push({ label: dim.name, startPos, endPos: xPos - 1, color: dim.color, band: hexAlpha(dim.color, 0.06) });
+        xGroups.push({
+            label: dim.name, shortLabel: _DIM_SHORT[dim.name] || dim.name,
+            startPos, endPos: xPos - 1, color: dim.color, band: hexAlpha(dim.color, 0.06),
+        });
         if (di < DIMS.length - 1) xPos += GAP;
     });
     const maxXPos = xPos - 1;
@@ -152,7 +176,7 @@ function renderBubbleDashboard(data) {
         };
     });
 
-    renderBubbleChart("chart-bubble", { datasets, xSlots, xGroups, yLabels, maxX: maxXPos });
+    renderBubbleChart("chart-bubble", { datasets, xSlots, xGroups, yLabels, yLabelsShort, yLabelsWrapped, maxX: maxXPos });
 }
 
 // ── Insights chart (selectable, dispatched via CHART_REGISTRY) ──
@@ -167,7 +191,8 @@ function renderInsightsChart(data, chartKey) {
     if (hostEl) {
         hostEl.style.display = "";
         hostEl.parentElement.style.display = "";
-        hostEl.parentElement.style.height = ""; // undo any heatmap-set inline height
+        hostEl.parentElement.style.height = ""; // undo any heatmap/donut-set inline height
+        hostEl.parentElement.classList.remove("chart-scroll-x"); // undo Sankey's scroll wrapper
     }
 
     if (!entry) return; // unknown/removed key → blank

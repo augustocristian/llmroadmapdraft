@@ -43,7 +43,6 @@ function initCitation() {
                 authors: pc.authors.map((a) => ({
                     given: a["given-names"],
                     family: a["family-names"],
-                    orcid: a.orcid || null,
                 })),
                 title: pc.title,
                 journal: pc.journal?.name || "",
@@ -53,7 +52,6 @@ function initCitation() {
                 pages: pc.journal?.pages ? `${pc.journal.pages.start}-${pc.journal.pages.end}` : "",
                 publisher: pc.journal?.publisher || "",
                 doi: pc.doi || "",
-                url: cff.url || "",
             };
         })
         .catch((err) => console.error("Error loading CITATION.cff:", err));

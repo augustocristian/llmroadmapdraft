@@ -177,10 +177,16 @@ function initYearSlider(state, minYear, maxYear, refresh) {
     document.getElementById("yearMinLabel").textContent = state.yearRange[0];
     document.getElementById("yearMaxLabel").textContent = state.yearRange[1];
 
+    // "update" fires continuously on every drag tick — keep it to cheap label
+    // text only. The expensive refresh (disposes/re-inits every chart) waits
+    // for "change", which fires once when the user releases the handle, so
+    // dragging doesn't visibly collapse/resize the charts mid-drag.
     sliderEl.noUiSlider.on("update", (values) => {
-        state.yearRange = [values[0], values[1]];
         document.getElementById("yearMinLabel").textContent = values[0];
         document.getElementById("yearMaxLabel").textContent = values[1];
+    });
+    sliderEl.noUiSlider.on("change", (values) => {
+        state.yearRange = [values[0], values[1]];
         refresh();
     });
 }
@@ -236,7 +242,6 @@ function _revealDashboard() {
 // ── Wire up the dashboard once the CSV has loaded ──
 function initDashboard(data, headers) {
     globalThis._allData = data;
-    globalThis._allHeaders = headers;
 
     initExport(data, headers);
     initDataTable(data, headers);
@@ -381,7 +386,13 @@ function initColumnVisibility(headers) {
         label.className = "col-vis-item";
         const cb = document.createElement("input");
         cb.type = "checkbox";
-        cb.checked = true;
+        // Reflect the same default-hidden decision table.js's column config
+        // made (SM_DEFAULT_HIDDEN, shared global) rather than querying
+        // Tabulator's column API — this runs synchronously right after
+        // initDataTable, before Tabulator's async "tableBuilt" fires, and
+        // getColumn() returns `false` (not undefined) until then, which
+        // would defeat `?.` and throw on the following method call.
+        cb.checked = !(_screenTier() === "sm" && SM_DEFAULT_HIDDEN.has(field));
         const span = document.createElement("span");
         span.textContent = field;
         label.appendChild(cb);
@@ -393,7 +404,18 @@ function initColumnVisibility(headers) {
         });
     });
 
-    btn.addEventListener("click", (e) => { e.stopPropagation(); dropdown.classList.toggle("active"); });
+    btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const opening = !dropdown.classList.contains("active");
+        dropdown.classList.toggle("active");
+        if (opening) {
+            // Clamp on-screen (mirrors the column-filter dropdown's clamp,
+            // table.js:365-369) now that this dropdown is position:fixed.
+            const rect = btn.getBoundingClientRect();
+            dropdown.style.top = `${rect.bottom + 4}px`;
+            dropdown.style.left = `${Math.max(8, Math.min(rect.right - dropdown.offsetWidth, window.innerWidth - dropdown.offsetWidth - 8))}px`;
+        }
+    });
     document.addEventListener("click", () => dropdown.classList.remove("active"));
     dropdown.addEventListener("click", (e) => e.stopPropagation());
 }
@@ -543,42 +565,3 @@ function initBulkBibtex() {
     });
 }
 
-// ── Sparklines ──
-function renderSparklines(data) {
-    const years = {};
-    data.forEach((r) => { if (r.YEAR) years[r.YEAR] = (years[r.YEAR] || 0) + 1; });
-    const sorted = Object.entries(years).sort((a, b) => a[0].localeCompare(b[0]));
-    if (sorted.length < 2) return;
-
-    const vals = sorted.map(([, c]) => c);
-    const max = Math.max(...vals);
-
-    function drawSparkline(canvasId) {
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        const w = canvas.width, h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-        ctx.strokeStyle = _C.DEEP_BLUE;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        vals.forEach((v, i) => {
-            const x = (i / (vals.length - 1)) * w;
-            const y = h - (v / max) * (h - 4) - 2;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        const maxIdx = vals.indexOf(max);
-        const mx = (maxIdx / (vals.length - 1)) * w;
-        const my = h - (h - 4) - 2;
-        ctx.fillStyle = _C.BURNT_ORANGE;
-        ctx.beginPath();
-        ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    drawSparkline("spark-avg-year");
-    drawSparkline("spark-peak-year");
-}

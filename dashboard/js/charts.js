@@ -157,6 +157,29 @@ function generateColors(count) {
     );
 }
 
+// ── Responsive tiers ───────────────────────────────────────────────────
+// Matches the CSS breakpoints in styles.css (992/768/600px) so JS-side chart
+// options and CSS-side container widths never disagree: sm = phone (≤600px),
+// md = tablet (601-992px), lg = desktop (>992px).
+function _screenTier() {
+    const w = window.innerWidth;
+    if (w <= 600) return "sm";
+    if (w <= 992) return "md";
+    return "lg";
+}
+
+// Legend layout for the charts with the largest legends (renderVenueChart,
+// renderLineChart, renderLLMHeatmap): vertical/right-docked on desktop (room
+// for many long names), horizontal/scrollable/bottom-docked when compact
+// (a vertical legend would otherwise eat 50%+ of a narrow canvas width).
+// `type:"scroll"` auto-paginates regardless of series count either way.
+function _responsiveLegend(itemSize, fontSize) {
+    if (_screenTier() === "lg") {
+        return { type: "scroll", orient: "vertical", right: 0, top: "middle", itemWidth: itemSize, itemHeight: itemSize, textStyle: { fontSize } };
+    }
+    return { type: "scroll", orient: "horizontal", bottom: 0, left: "center", itemWidth: Math.max(8, itemSize - 2), itemHeight: Math.max(8, itemSize - 2), textStyle: { fontSize: Math.max(8, fontSize - 2) } };
+}
+
 // ── Chart instances (Apache ECharts) ──────────────────────────────────
 // All charts mount on <div class="chart-host"> elements. _initChart is the ONLY
 // place echarts.init is called: it disposes any previous instance first (ECharts
@@ -186,12 +209,26 @@ function destroyChart(cid) {
 function resizeCharts() {
     Object.values(chartInstances).forEach((c) => c.resize());
 }
-globalThis.resizeCharts = resizeCharts;
 
 let _resizeTimer = null;
+let _lastTier = _screenTier();
 window.addEventListener("resize", () => {
     clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(resizeCharts, 150);
+    _resizeTimer = setTimeout(() => {
+        const tier = _screenTier();
+        if (tier !== _lastTier) {
+            _lastTier = tier;
+            // Legend/label/layout choices are tier-dependent (see render*
+            // functions below), so crossing a breakpoint needs every chart's
+            // option recomputed, not just rescaled — reuse the same
+            // full-rebuild path the dark-mode toggle already uses.
+            if (typeof globalThis._rerenderAllCharts === "function") {
+                globalThis._rerenderAllCharts();
+                return;
+            }
+        }
+        resizeCharts();
+    }, 150);
 });
 
 // ── Theme ──────────────────────────────────────────────────────────────
@@ -207,6 +244,12 @@ function getChartTheme() {
     };
 }
 
+// Brand teal (--brand-primary / --brand-dark-text in styles.css), as a literal
+// hex since ECharts/inline-style consumers can't read CSS custom properties.
+function brandTeal(dark) {
+    return dark ? "#4db6ac" : "#00796b";
+}
+
 // Same font stack as the page body (styles.css) so charts and UI match.
 const _FONT_STACK = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
@@ -217,7 +260,11 @@ function buildEchartsTheme(dark) {
     const axis = {
         axisLine:      { lineStyle: { color: muted } },
         axisTick:      { lineStyle: { color: muted } },
-        axisLabel:     { color: text },
+        // 13px matches renderCrossHeatmap's y-axis labels — the reference
+        // size for chart text at md/lg tiers. Charts that don't set their own
+        // axisLabel.fontSize (renderLLMHeatmap, renderLineChart,
+        // renderStackedAreaChart, renderVenueChart) inherit this uniformly.
+        axisLabel:     { color: text, fontSize: 13 },
         nameTextStyle: { color: text },
         splitLine:     { lineStyle: { color: grid } },
     };
@@ -225,7 +272,14 @@ function buildEchartsTheme(dark) {
         color: globalThis._PALETTE?.sequence || [],
         textStyle: { color: text, fontFamily: _FONT_STACK },
         title:  { textStyle: { color: text, fontFamily: _FONT_STACK } },
-        legend: { textStyle: { color: text, fontSize: 11, fontFamily: _FONT_STACK } },
+        legend: {
+            textStyle: { color: text, fontSize: 12, fontFamily: _FONT_STACK },
+            // Scroll-legend paginator arrows: brand teal instead of ECharts'
+            // default dark blue-gray, so they match the rest of the palette.
+            pageIconColor: brandTeal(dark),
+            pageIconInactiveColor: dark ? "rgba(77,182,172,0.35)" : "rgba(0,121,107,0.35)",
+            pageTextStyle: { color: text },
+        },
         tooltip: { textStyle: { fontFamily: _FONT_STACK } },
         categoryAxis: axis,
         valueAxis: axis,
@@ -257,7 +311,7 @@ function renderBarChart(cid, labels, data, label, colorMap) {
         grid: { left: 8, right: 40, top: 24, bottom: 34, containLabel: true },
         tooltip: { trigger: "item", formatter: (p) => `${p.name}: ${p.value} paper${p.value === 1 ? "" : "s"}` },
         xAxis: { type: "value", name: "No. Articles", nameLocation: "middle", nameGap: 26, minInterval: 1 },
-        yAxis: { type: "category", data: [...labels].reverse(), axisLabel: { fontSize: 11 } },
+        yAxis: { type: "category", data: [...labels].reverse() },
         series: [{
             type: "bar",
             barMaxWidth: 22,
@@ -274,13 +328,14 @@ function renderBarChart(cid, labels, data, label, colorMap) {
 
 // ── LLM usage timeline (stacked bar per family) ──
 function renderLLMHeatmap(cid, years, llms, counts) {
+    const compact = _screenTier() !== "lg";
     const chart = _initChart(cid);
     if (!chart) return;
     const fallback = generateColors(llms.length);
     const colors = llms.map((l, i) => globalThis._PALETTE?.llmFamilies?.[l] || fallback[i]);
     chart.setOption({
-        grid: { left: 8, right: 150, top: 16, bottom: 30, containLabel: true },
-        legend: { type: "scroll", orient: "vertical", right: 0, top: "middle", itemWidth: 12, itemHeight: 12, textStyle: { fontSize: 10 } },
+        grid: { left: 8, right: compact ? 12 : 150, top: 30, bottom: compact ? 84 : 30, containLabel: true },
+        legend: _responsiveLegend(12, 10),
         tooltip: { trigger: "item" },
         xAxis: { type: "category", data: years, name: "Year", nameLocation: "middle", nameGap: 28 },
         yAxis: { type: "value", name: "No. Papers", minInterval: 1 },
@@ -295,11 +350,12 @@ function renderLLMHeatmap(cid, years, llms, counts) {
 
 // ── Line chart — series = [{ name, data, color }] ──
 function renderLineChart(cid, labels, series) {
+    const compact = _screenTier() !== "lg";
     const chart = _initChart(cid);
     if (!chart) return;
     chart.setOption({
-        grid: { left: 8, right: 175, top: 16, bottom: 30, containLabel: true },
-        legend: { type: "scroll", orient: "vertical", right: 0, top: "middle", itemWidth: 14, textStyle: { fontSize: 11 } },
+        grid: { left: 8, right: compact ? 12 : 175, top: 30, bottom: compact ? 84 : 30, containLabel: true },
+        legend: _responsiveLegend(14, 13),
         tooltip: { trigger: "axis" },
         xAxis: { type: "category", data: labels, name: "Year", nameLocation: "middle", nameGap: 28, boundaryGap: false },
         yAxis: { type: "value", name: "No. Articles", minInterval: 1 },
@@ -322,7 +378,7 @@ function renderStackedAreaChart(cid, labels, series, yLabel) {
     if (!chart) return;
     chart.setOption({
         grid: { left: 8, right: 24, top: 44, bottom: 30, containLabel: true },
-        legend: { top: 0, itemWidth: 14, textStyle: { fontSize: 11 } },
+        legend: { top: 0, type: "scroll", itemWidth: 14, textStyle: { fontSize: 13 } },
         tooltip: { trigger: "axis" },
         xAxis: { type: "category", data: labels, name: "Year", nameLocation: "middle", nameGap: 28, boundaryGap: false },
         yAxis: { type: "value", name: yLabel || "No. Articles", minInterval: 1 },
@@ -339,45 +395,78 @@ function renderStackedAreaChart(cid, labels, series, yLabel) {
 
 // ── Donut/pie panel(s) — panels = [{ title, labels, values, colors? }] ──
 function renderMultiDonut(cid, panels) {
+    const compact = _screenTier() !== "lg" && panels.length > 1;
+    const host = document.getElementById(cid);
+    // Stack panels vertically with a generously tall container instead of the
+    // default side-by-side layout — ECharts pie radius % is always relative to
+    // min(containerWidth, containerHeight) of the WHOLE canvas, so side-by-side
+    // (or naively restacked) percentage centers can't give each panel an
+    // independent, non-overlapping box. Pixel-based sizing below (computed
+    // after init, once real dimensions are known) sidesteps that entirely.
+    if (compact && host?.parentElement) {
+        host.parentElement.style.height = (panels.length * 220) + "px";
+    }
     const chart = _initChart(cid);
     if (!chart) return;
-    const centersFor = { 1: ["50%"], 2: ["27%", "73%"], 3: ["17%", "50%", "83%"] };
-    const centers = centersFor[panels.length] || centersFor[3];
+    const titleColor = brandTeal(getChartTheme().dark);
+
+    let centers, radiusFor, titleTop, titleLeft;
+    if (compact) {
+        const w = chart.getWidth();
+        const perPanelH = chart.getHeight() / panels.length;
+        const contentH = perPanelH * 0.8;
+        const outerR = Math.min(w, contentH) / 2 * 0.85;
+        centers = panels.map((_, i) => ["50%", i * perPanelH + perPanelH * 0.58]);
+        radiusFor = () => [outerR * 0.6, outerR];
+        titleTop = (i) => i * perPanelH + 16;
+        titleLeft = () => "center";
+    } else {
+        const centersFor = { 1: ["50%"], 2: ["27%", "73%"], 3: ["17%", "50%", "83%"] };
+        const xCenters = centersFor[panels.length] || centersFor[3];
+        centers = xCenters.map((x) => [x, "55%"]);
+        radiusFor = () => ["34%", "56%"];
+        titleTop = () => 32;
+        titleLeft = (i) => xCenters[i];
+    }
+
     chart.setOption({
         title: panels.map((p, i) => ({
-            text: p.title, left: centers[i], top: 22, textAlign: "center",
-            textStyle: { fontSize: 14, fontWeight: "bold" },
+            text: p.title, left: titleLeft(i), top: titleTop(i), textAlign: "center",
+            // Smaller than "Additional Insights" (.card-title-sm, ~16-20.8px)
+            // and in the same brand teal rather than the theme's near-black
+            // default title color.
+            textStyle: { fontSize: 15, fontWeight: "bold", color: titleColor },
         })),
         tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
-        series: panels.map((p, i) => ({
-            type: "pie",
-            radius: ["34%", "56%"],
-            center: [centers[i], "55%"],
-            data: p.labels.map((l, j) => ({
-                name: l, value: p.values[j],
-                itemStyle: p.colors?.[j] ? { color: p.colors[j] } : undefined,
-            })),
-            label: { fontSize: 10, formatter: "{b}\n{c}" },
-            labelLine: { length: 10, length2: 6 },
-            itemStyle: { borderColor: "#fff", borderWidth: 1.5 },
-            percentPrecision: 1,
-        })),
+        series: panels.map((p, i) => {
+            const manySlices = compact && p.labels.length > 8;
+            return {
+                type: "pie",
+                radius: radiusFor(i),
+                center: centers[i],
+                data: p.labels.map((l, j) => ({
+                    name: l, value: p.values[j],
+                    itemStyle: p.colors?.[j] ? { color: p.colors[j] } : undefined,
+                })),
+                label: manySlices ? { show: false } : { fontSize: 12, formatter: "{b}\n{c}" },
+                labelLine: manySlices ? { show: false } : { length: 10, length2: 6 },
+                itemStyle: { borderColor: "#fff", borderWidth: 1.5 },
+                percentPrecision: 1,
+            };
+        }),
     });
     chart.on("click", (p) => chartClickFilter("", p.name));
 }
 
 // ── Venue stacked bar (year × venue) — series = [{ name, data, color }] ──
 function renderVenueChart(cid, years, series) {
+    const compact = _screenTier() !== "lg";
     const chart = _initChart(cid);
     if (!chart) return;
     const totals = years.map((_, i) => series.reduce((s, d) => s + (d.data[i] || 0), 0));
     chart.setOption({
-        grid: { left: 8, right: 160, top: 24, bottom: 8, containLabel: true },
-        legend: {
-            type: "scroll", orient: "vertical", right: 0, top: "middle",
-            data: series.map((s) => s.name),
-            itemWidth: 12, itemHeight: 12, textStyle: { fontSize: 10 },
-        },
+        grid: { left: 8, right: compact ? 12 : 175, top: 30, bottom: compact ? 84 : 8, containLabel: true },
+        legend: { ..._responsiveLegend(14, 13), data: series.map((s) => s.name) },
         tooltip: { trigger: "item" },
         xAxis: { type: "category", data: years },
         yAxis: { type: "value", name: "No. Articles", minInterval: 1 },
@@ -394,11 +483,15 @@ function renderVenueChart(cid, years, series) {
                 itemStyle: { color: "transparent" },
                 data: totals.map((t) => ({
                     value: 0,
-                    label: { show: t > 0, position: "top", formatter: String(t), fontWeight: "bold", fontSize: 11 },
+                    label: { show: t > 0, position: "top", formatter: String(t), fontWeight: "bold", fontSize: 12 },
                 })),
             },
         ],
     });
+    // Clicking a venue's segment filters the table to that venue AND year
+    // (AND-ed by _setGlobalTableSearch, same pattern as every other chart).
+    // The invisible total-label series is silent:true, so it never fires here.
+    chart.on("click", (p) => chartClickFilter("", [p.seriesName, years[p.dataIndex]]));
 }
 
 // ── Generic cross-tab heatmap ──
@@ -409,13 +502,21 @@ function renderVenueChart(cid, years, series) {
 // terms used for table filtering (needed when the axis shows shortened labels).
 function renderCrossHeatmap(cid, rowLabels, colLabels, counts, opts) {
     const { xTitle, yTitle, paletteHex, clickTerms } = opts || {};
+    const compact = _screenTier() !== "lg";
+    // On phones, cap displayed rows lower — rows arrive pre-sorted by
+    // frequency (see _crossHeatmap), so slicing further here keeps "most
+    // important first" while keeping the chart from towering at a fixed
+    // per-row pixel height.
+    const shownRows = compact && rowLabels.length > 10 ? rowLabels.slice(0, 10) : rowLabels;
     // Adapt the container height to the row count (the fixed CSS height would
     // squash an 18-row heatmap and stretch a 2-row one). Must happen BEFORE
     // _initChart so ECharts inits at the final size; renderInsightsChart
     // resets the inline height when another chart type is selected.
     const host = document.getElementById(cid);
     if (host?.parentElement) {
-        const px = Math.max(260, rowLabels.length * 30 + 130); // 30px/row + axis chrome
+        const perRow = compact ? 26 : 34;
+        const chrome = compact ? 90 : 130;
+        const px = Math.max(260, shownRows.length * perRow + chrome);
         host.parentElement.style.height = px + "px";
     }
     const chart = _initChart(cid);
@@ -424,7 +525,7 @@ function renderCrossHeatmap(cid, rowLabels, colLabels, counts, opts) {
     const hex = paletteHex || _C.DEEP_BLUE;
     const rampLow  = t.dark ? _lightenHex(hex, -0.75) : _lightenHex(hex, 0.92);
     const rampHigh = _lightenHex(hex, -0.2);
-    const rows = [...rowLabels].reverse(); // biggest row at top
+    const rows = [...shownRows].reverse(); // biggest row at top
     const cells = [];
     let maxVal = 1;
     rows.forEach((row, ri) => colLabels.forEach((col, ci) => {
@@ -437,16 +538,20 @@ function renderCrossHeatmap(cid, rowLabels, colLabels, counts, opts) {
         label: { color: v > maxVal * 0.55 ? "#fff" : t.text },
     }));
     chart.setOption({
-        grid: { left: 8, right: 24, top: 10, bottom: 44, containLabel: true },
+        grid: { left: 8, right: 24, top: 10, bottom: 58, containLabel: true },
         tooltip: {
             formatter: (p) => `${rows[p.value[1]]}  ×  ${colLabels[p.value[0]]}<br>${p.value[2]} paper${p.value[2] === 1 ? "" : "s"}`,
         },
         xAxis: {
             type: "category", data: colLabels,
-            name: xTitle, nameLocation: "middle", nameGap: 44,
-            axisLabel: { fontSize: 10, rotate: 30, interval: 0 }, splitLine: { show: false },
+            // Extra room between the (rotated) tick labels and the axis
+            // title below them, especially now the tick labels are bigger.
+            name: xTitle, nameLocation: "middle", nameGap: 58,
+            // Font size matches .coauthor-table's 0.82rem (~13px at the
+            // default root size) so text reads consistently across charts.
+            axisLabel: { fontSize: compact ? 11 : 13, rotate: compact ? 40 : 30, interval: 0 }, splitLine: { show: false },
         },
-        yAxis: { type: "category", data: rows, name: yTitle, axisLabel: { fontSize: 10 }, splitLine: { show: false } },
+        yAxis: { type: "category", data: rows, name: yTitle, axisLabel: { fontSize: 13 }, splitLine: { show: false } },
         visualMap: {
             show: false, min: 0, max: maxVal,
             inRange: { color: [rampLow, rampHigh] },
@@ -454,7 +559,7 @@ function renderCrossHeatmap(cid, rowLabels, colLabels, counts, opts) {
         series: [{
             type: "heatmap", data,
             itemStyle: { borderColor: t.cellBorder, borderWidth: 2 },
-            label: { show: true, fontSize: 9, formatter: (p) => (p.value[2] > 0 ? p.value[2] : "") },
+            label: { show: true, fontSize: 12, formatter: (p) => (p.value[2] > 0 ? p.value[2] : "") },
             emphasis: { itemStyle: { shadowBlur: 6, shadowColor: "rgba(0,0,0,0.3)" } },
         }],
     });
@@ -470,19 +575,30 @@ function renderCrossHeatmap(cid, rowLabels, colLabels, counts, opts) {
 
 // ── Sankey flow — links = [{ from, to, flow }], prefixed node ids ──
 function renderSankeyChart(cid, links, nodeColors, nodeLabels, dimHeaders) {
+    // 6 stages in a narrow phone canvas is inherently too dense to compress
+    // losslessly — shrink gutters/labels somewhat, but the primary fix is
+    // letting the chart render at a legible fixed width and scroll
+    // horizontally (.chart-scroll-x, styles.css), so treat this as "readable
+    // via scroll + tooltip," not "every label visible unscrolled." The class
+    // must be set BEFORE _initChart so ECharts measures the final width;
+    // renderInsightsChart (data.js) removes it when another chart is picked.
+    const compact = _screenTier() !== "lg";
+    const rightGutter = compact ? 24 : 96;
+    document.getElementById(cid)?.parentElement?.classList.toggle("chart-scroll-x", compact);
     const chart = _initChart(cid);
     if (!chart) return;
     const t = getChartTheme();
+    const stageTitleColor = brandTeal(t.dark); // same brand teal as the donut panel titles
     const headers = dimHeaders || [];
     const D = headers.length;
     const headerGraphics = headers.map((lines, i) => {
         const pos = {};
         if (D <= 1 || i === 0) pos.left = 14;
-        else if (i === D - 1) pos.right = 96;
-        else pos.left = `${(i / (D - 1)) * 86}%`;
+        else if (i === D - 1) pos.right = rightGutter;
+        else pos.left = `${(i / (D - 1)) * (compact ? 78 : 86)}%`;
         return {
             type: "text", ...pos, top: 8,
-            style: { text: lines.join(" "), fontSize: 13, fontWeight: "bold", fill: t.text },
+            style: { text: lines.join(" "), fontSize: compact ? 10 : 13, fontWeight: "bold", fill: stageTitleColor },
         };
     });
     chart.setOption({
@@ -496,11 +612,11 @@ function renderSankeyChart(cid, links, nodeColors, nodeLabels, dimHeaders) {
         },
         series: [{
             type: "sankey",
-            top: 36, left: 14, right: 96, bottom: 12,
-            nodeAlign: "justify", nodeGap: 14, nodeWidth: 18,
+            top: 36, left: 14, right: rightGutter, bottom: 12,
+            nodeAlign: "justify", nodeGap: compact ? 8 : 14, nodeWidth: compact ? 12 : 18,
             data: Object.keys(nodeLabels).map((id) => ({ name: id, itemStyle: { color: nodeColors[id] || _C.GRAY } })),
             links: links.map((l) => ({ source: l.from, target: l.to, value: l.flow })),
-            label: { formatter: (p) => nodeLabels[p.name] || p.name, fontSize: 12, color: t.text },
+            label: { formatter: (p) => nodeLabels[p.name] || p.name, fontSize: compact ? 9 : 13, color: t.text },
             lineStyle: { color: "gradient", opacity: 0.5, curveness: 0.5 },
             emphasis: { focus: "adjacency" },
         }],
@@ -509,23 +625,46 @@ function renderSankeyChart(cid, links, nodeColors, nodeLabels, dimHeaders) {
 
 // ── Bubble overview (trends × classification dimensions) ──
 function renderBubbleChart(cid, bubbleData) {
+    const compact = _screenTier() !== "lg";
     const chart = _initChart(cid);
     if (!chart) return;
+    // A fixed marker/font size looks increasingly small and empty on very
+    // wide (ultrawide-monitor) containers — scale modestly past ~1400px of
+    // actual rendered width (checked after init, not by screen tier, since
+    // "lg" already spans everything above 992px).
+    const big = !compact && chart.getWidth() > 1400;
     const t = getChartTheme();
-    const { datasets, xSlots, xGroups, yLabels, maxX } = bubbleData;
-    const solidColor = (rgba) => rgba.startsWith("rgba") ? rgba.replace(/[\d.]+\)$/, "1)") : rgba;
+    const { datasets, xSlots, xGroups, yLabels, yLabelsShort, yLabelsWrapped, maxX } = bubbleData;
+    const solidColor = (rgba) => (rgba.startsWith("rgba") ? rgba.slice(0, rgba.lastIndexOf(",") + 1) + "1)" : rgba);
+    let groupLabelFontSize = 15;
+    if (compact) groupLabelFontSize = 12;
+    else if (big) groupLabelFontSize = 18;
 
     // Category axes give deterministic ticks at every slot position (a value
     // axis can't be forced to tick exactly on the integer slot grid). Gap
     // positions between dimension groups become empty-label categories.
     const xData = Array.from({ length: maxX + 1 }, (_, i) =>
         xSlots.find((s) => s.pos === i)?.label || "");
+    // Display-only line breaks for the longest x-axis values — xData itself
+    // (used below by the tooltip and the click-filter handler) MUST stay the
+    // real, unwrapped CSV value or search matching would break.
+    const _XVAL_WRAP_BUBBLE = {
+        "Tool/Framework": "Tool/\nFramework",
+        "Pure Prompting": "Pure\nPrompting",
+        "Hybrid Prompting": "Hybrid\nPrompting",
+        "Code/Procedure": "Code/\nProcedure",
+    };
+    const xDataWrapped = xData.map((v) => _XVAL_WRAP_BUBBLE[v] || v);
 
     const markAreaData = (xGroups || []).map((g) => ([
         {
             xAxis: g.startPos,
             itemStyle: { color: g.band },
-            label: { show: true, position: "top", formatter: g.label, fontWeight: "bold", fontSize: 12, color: solidColor(g.color) },
+            label: {
+                show: true, position: "top", fontWeight: "bold", color: solidColor(g.color),
+                formatter: compact ? (g.shortLabel || g.label) : g.label,
+                fontSize: groupLabelFontSize,
+            },
         },
         { xAxis: g.endPos },
     ]));
@@ -539,14 +678,23 @@ function renderBubbleChart(cid, bubbleData) {
         grid: { left: 8, right: 20, top: 34, bottom: 8, containLabel: true },
         tooltip: { formatter: (p) => `${yLabels[p.value[1]]}: ${xData[p.value[0]]} (${p.value[2]} articles)` },
         xAxis: {
-            type: "category", data: xData,
-            axisLabel: { fontSize: 10, rotate: 50, interval: 0 },
+            // xDataWrapped line-breaks the known-long values for display at
+            // every tier; xData (used above by the tooltip, and below by the
+            // click handler) stays the real, unwrapped value.
+            type: "category", data: xDataWrapped,
+            axisLabel: compact
+                ? { fontSize: 13, rotate: 60, interval: "auto" }
+                : { fontSize: big ? 15 : 13, rotate: 50, interval: 0 },
             axisTick: { show: false },
             splitLine: { show: false },
         },
         yAxis: {
-            type: "category", data: yLabels,
-            axisLabel: { fontSize: 11 },
+            // Tick labels abbreviate on phones (yLabelsShort) and line-wrap on
+            // large screens (yLabelsWrapped, plenty of row height to spare);
+            // tooltip/click-filter below still resolve against plain yLabels.
+            type: "category",
+            data: compact ? (yLabelsShort || yLabels) : (yLabelsWrapped || yLabels),
+            axisLabel: { fontSize: big ? 16 : 13, lineHeight: big ? 18 : 15 },
             splitLine: { lineStyle: { color: t.grid, width: 0.8 } },
         },
         series: datasets.map((ds, di) => ({
@@ -555,11 +703,11 @@ function renderBubbleChart(cid, bubbleData) {
             data: ds.data.map((p) => [p.x, p.y, p.count]),
             symbolSize: (d) => {
                 const pt = ds.data.find((p) => p.x === d[0] && p.y === d[1]);
-                return (pt?.r || 4) * 2;
+                return (pt?.r || 4) * (big ? 2.6 : 2);
             },
             itemStyle: { color: ds.backgroundColor, borderColor: "#fff", borderWidth: 1.5 },
             label: {
-                show: true, position: "inside", color: "#fff", fontSize: 10, fontWeight: "bold",
+                show: true, position: "inside", color: "#fff", fontSize: big ? 14 : 12, fontWeight: "bold",
                 formatter: (p) => {
                     const pt = ds.data.find((q) => q.x === p.value[0] && q.y === p.value[1]);
                     return (pt?.r || 0) >= 10 ? String(p.value[2]) : "";
@@ -577,4 +725,52 @@ function renderBubbleChart(cid, bubbleData) {
             } : {}),
         })),
     });
+    // Clicking a bubble filters the table to that trend AND dimension value
+    // (AND-ed by _setGlobalTableSearch, same pattern as every other chart).
+    chart.on("click", (p) => {
+        const val = xData[p.value[0]];
+        const trend = yLabels[p.value[1]];
+        if (!val || !trend) return;
+        chartClickFilter("", [trend, val]);
+    });
+}
+
+// ── Sparklines (plain canvas 2D, not ECharts — too small to warrant it) ──
+function renderSparklines(data) {
+    const years = {};
+    data.forEach((r) => { if (r.YEAR) years[r.YEAR] = (years[r.YEAR] || 0) + 1; });
+    const sorted = Object.entries(years).sort((a, b) => a[0].localeCompare(b[0]));
+    if (sorted.length < 2) return;
+
+    const vals = sorted.map(([, c]) => c);
+    const max = Math.max(...vals);
+
+    function drawSparkline(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = _C.DEEP_BLUE;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        vals.forEach((v, i) => {
+            const x = (i / (vals.length - 1)) * w;
+            const y = h - (v / max) * (h - 4) - 2;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        const maxIdx = vals.indexOf(max);
+        const mx = (maxIdx / (vals.length - 1)) * w;
+        const my = h - (h - 4) - 2;
+        ctx.fillStyle = _C.BURNT_ORANGE;
+        ctx.beginPath();
+        ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    drawSparkline("spark-avg-year");
+    drawSparkline("spark-peak-year");
 }
