@@ -206,10 +206,12 @@ function initCorpusToggle(state, refresh) {
 // ── Insights chart selector ──
 function initChartSelector(data, state, hashState) {
     const chartSelect = document.getElementById("graficoSelect");
-    if (hashState.chart && globalThis.CHART_REGISTRY?.[hashState.chart]) {
-        chartSelect.value = hashState.chart;
-        renderInsightsChart(applyFilters(data, state.corpus, state.yearRange), hashState.chart);
-    }
+    // Deep-link to a specific chart via #chart=<key>; otherwise fall back to
+    // whatever buildChartSelect() already marked `selected` (DEFAULT_CHART_KEY)
+    // so the dropdown and the actual rendered chart always agree on first load.
+    const hasValidHashChart = hashState.chart && globalThis.CHART_REGISTRY?.[hashState.chart];
+    if (hasValidHashChart) chartSelect.value = hashState.chart;
+    renderInsightsChart(applyFilters(data, state.corpus, state.yearRange), chartSelect.value);
     chartSelect.addEventListener("change", (e) => {
         const filtered = applyFilters(data, state.corpus, state.yearRange);
         renderInsightsChart(filtered, e.target.value);
