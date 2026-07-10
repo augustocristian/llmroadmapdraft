@@ -102,8 +102,10 @@ See the general contribution policies and guidelines for *giis-uniovi* at
 
 ### Proposing a new article for the corpus
 
-Found a paper on LLM-based software testing that isn't in the roadmap yet? You can propose it by
-opening a pull request that adds one row to `data/articlecorpus.csv` (`;`-separated). Please:
+Found a paper on LLM-based software testing that isn't in the roadmap yet? The easiest way to propose it is the **Contribute!** link in the dashboard's footer: it opens a guided form for all the fields below (dropdowns for the fixed-vocabulary ones, free text for the rest) and, on submit, opens a pre-filled GitHub issue with a ready-to-paste CSV row — no need to touch Git, forking, or the CSV format by hand. A maintainer reviews the issue and turns it into the PR described below.
+
+If you'd rather do it yourself, you can propose it directly by opening a pull request that adds
+one row to `data/articlecorpus.csv` (`;`-separated). Please:
 
 1. Fork the repository and create a branch for your addition.
 2. Append a **single new row** to `data/articlecorpus.csv` for your article or propose some modification in the existing

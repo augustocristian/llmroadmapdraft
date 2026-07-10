@@ -47,6 +47,7 @@
   <script src="dashboard/js/export.js" defer></script>
   <script src="dashboard/js/data.js" defer></script>
   <script src="dashboard/js/citation.js" defer></script>
+  <script src="dashboard/js/contribute.js" defer></script>
   <script src="dashboard/js/main.js" defer></script>
 </head>
 
@@ -332,6 +333,7 @@
           <a href="https://github.com/augustocristian/llm-testing-roadmap-rp" target="_blank">GitHub</a>
           <a href="https://doi.org/10.5281/zenodo.17144160" target="_blank">Zenodo</a>
           <a href="https://orcid.org/0000-0001-6140-1375" target="_blank">Contact</a>
+          <a href="#" id="open-contribute" class="footer-contribute-link">Contribute!</a>
         </div>
       </div>
     </footer>
@@ -385,6 +387,134 @@
     <div class="dialog-actions">
       <button id="copy-citation" class="btn-flat">Copy</button>
       <button class="btn-flat" data-dialog-close>Close</button>
+    </div>
+  </dialog>
+
+  <!-- Contribute dialog -->
+  <dialog id="modal-contribute" class="dialog-lg" aria-labelledby="modal-contribute-title">
+    <div class="dialog-body">
+      <button class="modal-close-x" data-dialog-close aria-label="Close">&#10005;</button>
+      <h4 id="modal-contribute-title">Suggest a new article</h4>
+      <p class="contribute-intro">Fill in the fields below to propose a new article for the roadmap. On submit, this
+        opens a pre-filled GitHub issue in a new tab &mdash; you'll need a GitHub account to review and submit it
+        there. A maintainer will then add it to the dataset.</p>
+      <div id="contribute-alert" class="contribute-alert" role="alert" hidden></div>
+      <form id="contribute-form" novalidate>
+        <div class="contribute-field contribute-field-full">
+          <label for="c-title">Title <span class="req">*</span></label>
+          <input type="text" id="c-title" name="title" required placeholder="Full article title" />
+        </div>
+
+        <div class="contribute-grid">
+          <div class="contribute-field">
+            <label for="c-year">Year <span class="req">*</span></label>
+            <input type="number" id="c-year" name="year" required min="1990" max="2100" placeholder="2026" />
+          </div>
+          <fieldset class="contribute-field contribute-fieldset">
+            <legend>Database <span class="req">*</span> <span class="contribute-hint">(select all that apply)</span></legend>
+            <div class="contribute-chip-group" id="c-database-group"></div>
+          </fieldset>
+        </div>
+
+        <fieldset class="contribute-field contribute-field-full contribute-fieldset">
+          <legend>Venue <span class="req">*</span></legend>
+          <div class="contribute-venue-row">
+            <div class="contribute-radio-group" id="c-venue-type-group">
+              <label class="contribute-radio"><input type="radio" name="venueType" value="Conference" required /> Conference (C:)</label>
+              <label class="contribute-radio"><input type="radio" name="venueType" value="Journal" required /> Journal (J:)</label>
+              <label class="contribute-radio"><input type="radio" name="venueType" value="arXiv" required /> arXiv</label>
+            </div>
+            <label class="contribute-inline-label" for="c-venue-name">Acronym / venue name
+              <input type="text" id="c-venue-name" name="venueName" required placeholder="e.g. ICSE, TSE" />
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="contribute-grid">
+          <div class="contribute-field">
+            <label for="c-contribution-type">Type of contribution <span class="req">*</span></label>
+            <select id="c-contribution-type" name="contributionType" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+          <div class="contribute-field">
+            <label for="c-llm-interaction">LLM interaction <span class="req">*</span></label>
+            <select id="c-llm-interaction" name="llmInteraction" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+          <div class="contribute-field">
+            <label for="c-contextual-info">Contextual info <span class="req">*</span></label>
+            <select id="c-contextual-info" name="contextualInfo" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+          <div class="contribute-field">
+            <label for="c-approach">Approach <span class="req">*</span></label>
+            <select id="c-approach" name="approach" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+          <div class="contribute-field">
+            <label for="c-scope">Scope <span class="req">*</span></label>
+            <select id="c-scope" name="scope" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+          <div class="contribute-field">
+            <label for="c-focus">Focus <span class="req">*</span></label>
+            <select id="c-focus" name="focus" required>
+              <option value="" disabled selected>Select&hellip;</option>
+            </select>
+          </div>
+        </div>
+
+        <fieldset class="contribute-field contribute-field-full contribute-fieldset">
+          <legend>Trend <span class="req">*</span> <span class="contribute-hint">(select one or more)</span></legend>
+          <div class="contribute-chip-group" id="c-trend-group"></div>
+        </fieldset>
+
+        <div class="contribute-field contribute-field-full">
+          <label for="c-abstract">Abstract <span class="req">*</span></label>
+          <textarea id="c-abstract" name="abstract" rows="4" required placeholder="Short abstract"></textarea>
+        </div>
+
+        <div class="contribute-field contribute-field-full">
+          <label for="c-bibtex">BibTeX <span class="req">*</span> <span class="contribute-hint">(full entry &mdash; the citation key is read from here)</span></label>
+          <textarea id="c-bibtex" name="bibtex" rows="6" required placeholder="@InProceedings{AuthorYearKeyword, ... }"></textarea>
+        </div>
+
+        <div class="contribute-grid">
+          <div class="contribute-field">
+            <label for="c-benchmark">Benchmark <span class="contribute-hint">(if applicable)</span></label>
+            <input type="text" id="c-benchmark" name="benchmark" placeholder="Comma-separated" />
+          </div>
+          <div class="contribute-field">
+            <label for="c-llms-used">LLMs used <span class="contribute-hint">(if applicable)</span></label>
+            <input type="text" id="c-llms-used" name="llmsUsed" placeholder="Comma-separated" />
+          </div>
+          <div class="contribute-field">
+            <label for="c-evaluation-metric">Evaluation metric <span class="contribute-hint">(if applicable)</span></label>
+            <input type="text" id="c-evaluation-metric" name="evaluationMetric" placeholder="Comma-separated" />
+          </div>
+          <div class="contribute-field">
+            <label for="c-tool">Tool <span class="contribute-hint">(if applicable)</span></label>
+            <input type="text" id="c-tool" name="tool" placeholder="Tool name, if any" />
+          </div>
+        </div>
+
+        <p class="contribute-id-hint">Proposed identifier: <b id="contribute-next-id">N001</b>
+          <span class="contribute-hint">(assigned automatically; may shift slightly if other suggestions are merged first)</span></p>
+
+        <div class="contribute-field contribute-field-full">
+          <label for="c-comment">Comment for the maintainer <span class="contribute-hint">(optional)</span></label>
+          <textarea id="c-comment" name="comment" rows="3" placeholder="Anything else reviewers should know?"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-flat" data-dialog-close type="button">&larr; Back to Dashboard</button>
+      <button class="btn" id="contribute-submit" type="button">SUGGEST</button>
     </div>
   </dialog>
 </body>

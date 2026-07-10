@@ -293,6 +293,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initDialogs(); // native <dialog> close/backdrop wiring (ui.js)
     initCitation();
+    initContribute();
     initCopyBibtex();
     initDarkModeToggle();
     initBackToTop();

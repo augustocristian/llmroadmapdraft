@@ -853,6 +853,175 @@ a { color: var(--brand-primary); }
 .footer-links a:hover {
     text-decoration: underline;
 }
+.footer-contribute-link {
+    font-weight: 700;
+}
+
+/* ── Contribute form ── */
+.dialog-lg {
+    width: min(880px, 94vw);
+    max-height: 90vh;
+}
+.contribute-intro {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    margin: 0 0 var(--space-4);
+}
+.contribute-alert {
+    position: sticky;
+    top: -1px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fdecea;
+    color: #611a15;
+    border: 1px solid #f5c6cb;
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin: 0 0 var(--space-4);
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: var(--shadow-card);
+}
+.contribute-alert[hidden] {
+    display: none;
+}
+.contribute-field {
+    margin-bottom: var(--space-4);
+}
+.contribute-field label,
+.contribute-fieldset legend {
+    display: block;
+    font-weight: 600;
+    font-size: 0.82rem;
+    margin-bottom: 6px;
+    padding: 0;
+}
+.req {
+    color: var(--brand-secondary);
+}
+.contribute-hint {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+.contribute-field input[type="text"],
+.contribute-field input[type="number"],
+.contribute-field select,
+.contribute-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+}
+.contribute-field textarea {
+    resize: vertical;
+}
+.contribute-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+}
+.contribute-fieldset {
+    border: none;
+    padding: 0;
+    margin: 0 0 var(--space-4);
+}
+.contribute-venue-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+}
+.contribute-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+.contribute-radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 400;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.contribute-inline-label {
+    flex: 1 1 220px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.contribute-inline-label input {
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+.contribute-chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.contribute-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 14px;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #555;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.contribute-chip:hover {
+    border-color: var(--brand-primary);
+}
+.contribute-chip-selected {
+    background: var(--brand-primary);
+    border-color: var(--brand-primary);
+    color: #fff;
+    font-weight: 600;
+}
+.contribute-chip-selected:hover {
+    filter: brightness(1.08);
+}
+.contribute-id-hint {
+    font-size: 0.82rem;
+    margin: 0 0 var(--space-4);
+}
+
+/* Marked by JS on native-invalid fields (after a submit attempt) and on the
+   custom chip-group / BibTeX checks that native validation can't see. */
+.contribute-field.contribute-invalid input,
+.contribute-field.contribute-invalid select,
+.contribute-field.contribute-invalid textarea {
+    border-color: #d0021b;
+    box-shadow: 0 0 0 1px #d0021b;
+}
+.contribute-fieldset.contribute-invalid {
+    outline: 2px solid #d0021b;
+    outline-offset: 6px;
+    border-radius: var(--radius-sm);
+}
+@media (max-width: 640px) {
+    .contribute-grid {
+        grid-template-columns: 1fr;
+    }
+}
 
 /* ── Related papers list (in modal) ── */
 .related-papers-list {
@@ -1828,6 +1997,39 @@ body.dark-mode .footer-copy {
 }
 body.dark-mode .footer-links a {
     color: var(--brand-dark-text);
+}
+body.dark-mode .contribute-alert {
+    background: #4a2323;
+    color: #f5b8b3;
+    border-color: #6b2f2a;
+}
+body.dark-mode .contribute-field input[type="text"],
+body.dark-mode .contribute-field input[type="number"],
+body.dark-mode .contribute-field select,
+body.dark-mode .contribute-field textarea,
+body.dark-mode .contribute-inline-label input {
+    background-color: #2e2e2e;
+    color: #ddd;
+    border-color: #444;
+}
+body.dark-mode .contribute-chip {
+    background: #2e2e2e;
+    border-color: #444;
+    color: #ccc;
+}
+body.dark-mode .contribute-chip-selected {
+    background: var(--brand-dark-text);
+    border-color: var(--brand-dark-text);
+    color: #14201d;
+}
+body.dark-mode .contribute-field.contribute-invalid input,
+body.dark-mode .contribute-field.contribute-invalid select,
+body.dark-mode .contribute-field.contribute-invalid textarea {
+    border-color: #f5877e;
+    box-shadow: 0 0 0 1px #f5877e;
+}
+body.dark-mode .contribute-fieldset.contribute-invalid {
+    outline-color: #f5877e;
 }
 body.dark-mode .noUi-target {
     background: #333 !important;
